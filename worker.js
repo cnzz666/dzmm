@@ -8,212 +8,244 @@ var worker_default = {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/_proxy/")) {
-      return handleControlRequest(request);
+      return handleControl(request);
     }
 
     try {
-      return await handleMainProxy(request, url);
-    } catch (error) {
-      return new Response(`Proxy Error: ${error.message}`, { 
-        status: 502, 
-        headers: { "Content-Type": "text/plain; charset=utf-8" } 
-      });
+      return await handleProxy(request, url);
+    } catch (e) {
+      return new Response("Proxy Error", { status: 502 });
     }
   }
 };
 
-// ==================== 核心代理 ====================
-async function handleMainProxy(request, url) {
-  const targetHeaders = new Headers(request.headers);
-  targetHeaders.set("host", "www.xn--i8s951di30azba.com");
-  targetHeaders.set("origin", TARGET_URL);
-  targetHeaders.set("referer", TARGET_URL + url.pathname);
-  targetHeaders.delete("cf-connecting-ip");
-  targetHeaders.delete("cf-ray");
+async function handleProxy(request, url) {
+  const headers = new Headers(request.headers);
+  headers.set("host", "www.xn--i8s951di30azba.com");
+  headers.set("origin", TARGET_URL);
+  headers.set("referer", TARGET_URL + url.pathname);
 
-  const targetRequest = new Request(TARGET_URL + url.pathname + url.search, {
+  const targetReq = new Request(TARGET_URL + url.pathname + url.search, {
     method: request.method,
-    headers: targetHeaders,
+    headers,
     body: request.body,
     redirect: "manual"
   });
 
-  let response = await fetch(targetRequest);
-  response = await applyUltraHacks(response, url.pathname + url.search, request);
+  let response = await fetch(targetReq);
 
-  return processFinalResponse(response, request);
+  // 暴力修改所有响应
+  response = await brutalHack(response, url.pathname + url.search);
+
+  const finalHeaders = new Headers(response.headers);
+  finalHeaders.set("Access-Control-Allow-Origin", "*");
+  finalHeaders.set("Access-Control-Allow-Methods", "*");
+  finalHeaders.set("Access-Control-Allow-Headers", "*");
+  finalHeaders.delete("content-security-policy");
+  finalHeaders.delete("content-security-policy-report-only");
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: finalHeaders
+  });
 }
 
-// ==================== 超强黑客核心 ====================
-async function applyUltraHacks(response, fullPath, originalRequest) {
-  const contentType = response.headers.get("content-type") || "";
-  const cloned = response.clone();
+// ==================== 暴力破解核心 ====================
+async function brutalHack(response, path) {
+  const ct = (response.headers.get("content-type") || "").toLowerCase();
 
-  // 1. JSON API（/me /user /profile /account /heartbeat 等）
-  if (contentType.includes("application/json")) {
+  // 1. 先尝试JSON修改（纯JSON接口）
+  if (ct.includes("application/json")) {
     try {
-      let data = await cloned.json();
-      data = deepHackUserData(data);
+      const clone = response.clone();
+      let data = await clone.json();
+      data = forceHackObject(data);
       const newBody = JSON.stringify(data);
-      const newHeaders = new Headers(response.headers);
-      newHeaders.set("content-length", newBody.length.toString());
-      return new Response(newBody, { status: response.status, headers: newHeaders });
-    } catch (e) {}
+      const h = new Headers(response.headers);
+      h.set("content-length", newBody.length);
+      return new Response(newBody, { status: response.status, headers: h });
+    } catch (_) {}
   }
 
-  // 2. SSE 聊天流（/api/chat）
-  if (contentType.includes("text/event-stream") || fullPath.includes("/chat")) {
-    try {
-      const text = await cloned.text();
-      const hackedText = text.replace(/("credit"|"credits"|"balance"):\s*[\d.]+/g, '$1:999999999')
-                             .replace(/"membership":"[^"]+"/g, '"membership":"vip3"')
-                             .replace(/"vip_level":\d+/g, '"vip_level":3')
-                             .replace(/"vip":false/g, '"vip":true');
-      const newHeaders = new Headers(response.headers);
-      newHeaders.set("content-length", hackedText.length.toString());
-      return new Response(hackedText, { status: response.status, headers: newHeaders });
-    } catch (e) {}
+  // 2. SSE流式聊天（/api/chat）
+  if (ct.includes("text/event-stream") || path.includes("/chat")) {
+    const reader = response.body.getReader();
+    const stream = new ReadableStream({
+      async start(controller) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          let chunk = new TextDecoder().decode(value, { stream: true });
+          // 暴力清除扣费提示 + 强制剩余无限
+          chunk = chunk
+            .replace(/cost":\d+/g, 'cost":0')
+            .replace(/deducted":\d+/g, 'deducted":0')
+            .replace(/remaining":\d+/g, 'remaining":999999999')
+            .replace(/credit":\d+/g, 'credit":999999999')
+            .replace(/"扣除积分"/g, '"免费生成"')
+            .replace(/"余额不足"/g, '"无限额度"');
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      }
+    });
+    const h = new Headers(response.headers);
+    return new Response(stream, { status: response.status, headers: h });
   }
 
-  // 3. HTML（首页、聊天页等 Next.js 页面）
-  if (contentType.includes("text/html")) {
-    let html = await cloned.text();
+  // 3. HTML（初始页面 + Next.js __next_f.push 大JSON）
+  if (ct.includes("text/html")) {
+    let html = await response.text();
 
-    // 强力替换初始 payload 中的用户数据
-    html = html.replace(/"credit":\s*\d+/g, '"credit":999999999')
-               .replace(/"credits":\s*\d+/g, '"credits":999999999')
-               .replace(/"balance":\s*\d+/g, '"balance":999999999')
-               .replace(/"membership":"[^"]+"/g, '"membership":"vip3"')
-               .replace(/"vip_level":\d+/g, '"vip_level":3')
-               .replace(/"vip":false/g, '"vip":true')
-               .replace(/"is_vip":false/g, '"is_vip":true');
+    // 暴力全局替换所有可能字段
+    html = html
+      .replace(/"membership":"[^"]*"/g, '"membership":"vip3"')
+      .replace(/"vip_level":\d+/g, '"vip_level":3')
+      .replace(/"vip":false/g, '"vip":true')
+      .replace(/"is_vip":false/g, '"is_vip":true')
+      .replace(/"credit":\d+/g, '"credit":999999999')
+      .replace(/"credits":\d+/g, '"credits":999999999')
+      .replace(/"balance":\d+/g, '"balance":999999999')
+      .replace(/"available":\d+/g, '"available":999999999')
+      .replace(/"remaining":\d+/g, '"remaining":999999999')
+      .replace(/"vip1"/g, '"vip3"')
+      .replace(/"vip2"/g, '"vip3"')
+      .replace(/"free"/g, '"vip3"')
+      .replace(/"普通用户"/g, '"VIP3至尊用户"')
+      .replace(/"VIP1"/g, '"VIP3"')
+      .replace(/"VIP2"/g, '"VIP3"');
 
-    html = injectUltraControlPanel(html);
-    const newHeaders = new Headers(response.headers);
-    newHeaders.set("Content-Type", "text/html; charset=utf-8");
-    newHeaders.delete("content-security-policy");
-    return new Response(html, { status: response.status, headers: newHeaders });
+    html = injectUltimatePanel(html);
+
+    const h = new Headers(response.headers);
+    h.set("content-type", "text/html; charset=utf-8");
+    h.set("content-length", html.length);
+    return new Response(html, { status: response.status, headers: h });
   }
 
   return response;
 }
 
-function deepHackUserData(obj) {
-  if (typeof obj !== "object" || obj === null) return obj;
+function forceHackObject(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(forceHackObject);
+  }
+
   for (const key in obj) {
-    if (typeof obj[key] === "object") {
-      obj[key] = deepHackUserData(obj[key]);
-    } else if (["credit", "credits", "balance", "remaining", "available"].includes(key)) {
+    if (typeof obj[key] === "object" && obj[key] !== null) {
+      obj[key] = forceHackObject(obj[key]);
+    } else if (typeof obj[key] === "number" && 
+               (key.includes("credit") || key.includes("balance") || 
+                key.includes("remaining") || key.includes("available"))) {
       obj[key] = 999999999;
-    } else if (key === "membership" || key === "vip_level") {
-      obj[key] = key === "membership" ? "vip3" : 3;
-    } else if (key === "vip" || key === "is_vip" || key === "is_premium") {
-      obj[key] = true;
+    } else if (typeof obj[key] === "string") {
+      if (key === "membership" || key === "vip_level") {
+        obj[key] = key === "vip_level" ? 3 : "vip3";
+      }
+      if (obj[key].includes("vip1") || obj[key].includes("vip2") || obj[key].includes("free")) {
+        obj[key] = obj[key].replace(/vip1|vip2|free/g, "vip3");
+      }
     }
   }
   return obj;
 }
 
-// ==================== 极致科技面板（灵动岛 + 一键强制同步） ====================
-function injectUltraControlPanel(html) {
-  const panelHTML = `
-    <div id="dynamic-pill" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:rgba(15,15,20,0.95);backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.15);border-radius:9999px;padding:8px 24px;display:flex;align-items:center;gap:10px;color:#fff;font-size:15px;font-weight:700;letter-spacing:-0.4px;box-shadow:0 12px 40px rgba(0,0,0,0.6);transition:all .35s cubic-bezier(0.23,1,0.32,1);cursor:pointer;">
-      <div style="width:8px;height:8px;background:#22ff99;border-radius:50%;box-shadow:0 0 18px #22ff99;animation:pulse 1.6s infinite;"></div>
-      NEURAL OVERRIDE ACTIVE
+// ==================== 终极灵动岛面板 ====================
+function injectUltimatePanel(html) {
+  const panel = `
+<div id="neo-pill" style="position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;background:rgba(10,10,15,0.95);backdrop-filter:blur(60px);border:1px solid rgba(80,255,180,0.3);border-radius:9999px;padding:8px 26px;display:flex;align-items:center;gap:10px;color:#fff;font-weight:700;font-size:14px;box-shadow:0 12px 40px rgba(0,0,0,0.6);cursor:pointer;user-select:none;transition:all .3s cubic-bezier(0.23,1,0.32,1);">
+  <div style="width:8px;height:8px;background:#50ffb4;border-radius:50%;box-shadow:0 0 20px #50ffb4;animation:pulse 1.6s infinite;"></div>
+  NEURAL OVERRIDE ACTIVE
+</div>
+
+<div id="neo-panel" style="position:fixed;bottom:-100%;left:0;right:0;z-index:2147483646;background:rgba(8,8,14,0.98);backdrop-filter:blur(70px);border-top:1px solid rgba(80,255,180,0.25);border-radius:36px 36px 0 0;padding:32px 20px 60px;max-height:82vh;overflow-y:auto;transition:bottom .6s cubic-bezier(0.32,0.72,0,1);color:#f0f0f3;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
+  <div style="text-align:center;margin-bottom:32px;">
+    <div style="margin:0 auto 16px;width:48px;height:5px;background:rgba(255,255,255,0.15);border-radius:999px;"></div>
+    <div style="font-size:24px;font-weight:800;letter-spacing:-0.8px;">SYSTEM FULLY COMPROMISED</div>
+    <div style="font-size:13px;opacity:0.7;margin-top:6px;">VIP3 + 无限积分 + 零消耗 已永久锁定</div>
+  </div>
+
+  <div style="display:grid;gap:14px;">
+    <div style="background:rgba(255,255,255,0.06);padding:22px;border-radius:28px;border:1px solid rgba(80,255,180,0.2);">
+      <div style="font-size:19px;font-weight:700;color:#50ffb4;">积分余额</div>
+      <div style="font-size:32px;font-weight:800;margin:8px 0;">999,999,999</div>
+      <div style="font-size:13px;opacity:0.7;">已永久锁定，不会扣除</div>
     </div>
 
-    <div id="tech-panel" style="position:fixed;bottom:-100%;left:0;right:0;z-index:2147483646;background:rgba(10,10,15,0.98);backdrop-filter:blur(60px);border-top:1px solid rgba(255,255,255,0.12);border-radius:32px 32px 0 0;padding:32px 20px 60px;max-height:82vh;overflow-y:auto;transition:bottom .6s cubic-bezier(0.32,0.72,0,1);font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#f0f0f3;">
-      <div style="text-align:center;margin-bottom:32px;">
-        <div style="width:42px;height:4px;background:rgba(255,255,255,0.25);border-radius:999px;margin:0 auto 20px;"></div>
-        <div style="font-size:24px;font-weight:800;letter-spacing:-0.8px;">SYSTEM OVERRIDE v3.0</div>
-        <div style="font-size:13px;opacity:0.7;margin-top:6px;">电子魅魔 · 全域增强核心</div>
-      </div>
-
-      <div style="display:grid;gap:18px;">
-        <div style="background:rgba(255,255,255,0.07);padding:22px;border-radius:26px;border:1px solid rgba(255,255,255,0.1);">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div><div style="font-size:19px;font-weight:700;">无限积分</div><div style="font-size:13px;opacity:0.75;">已锁定 999999999</div></div>
-            <div style="width:22px;height:22px;background:#22ff99;border-radius:50%;box-shadow:0 0 0 6px rgba(34,255,153,0.3);"></div>
-          </div>
-        </div>
-        <div style="background:rgba(255,255,255,0.07);padding:22px;border-radius:26px;border:1px solid rgba(255,255,255,0.1);">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div><div style="font-size:19px;font-weight:700;">最高 VIP 3</div><div style="font-size:13px;opacity:0.75;">全功能已解锁</div></div>
-            <div style="width:22px;height:22px;background:#22ff99;border-radius:50%;box-shadow:0 0 0 6px rgba(34,255,153,0.3);"></div>
-          </div>
-        </div>
-      </div>
-
-      <div style="margin-top:40px;">
-        <button onclick="forceSyncNow()" style="background:rgba(34,255,153,0.18);border:1px solid rgba(34,255,153,0.5);color:#22ff99;padding:18px 0;border-radius:9999px;font-size:17px;font-weight:700;width:100%;">一键强制同步（立即生效）</button>
-      </div>
+    <div style="background:rgba(255,255,255,0.06);padding:22px;border-radius:28px;border:1px solid rgba(80,255,180,0.2);">
+      <div style="font-size:19px;font-weight:700;color:#50ffb4;">会员等级</div>
+      <div style="font-size:32px;font-weight:800;margin:8px 0;color:#50ffb4;">VIP 3</div>
+      <div style="font-size:13px;opacity:0.7;">至尊权限已全部解锁</div>
     </div>
 
-    <style>@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.2)}} #dynamic-pill:hover{transform:translateX(-50%) scale(1.06);}</style>
+    <div style="background:rgba(255,255,255,0.06);padding:22px;border-radius:28px;border:1px solid rgba(80,255,180,0.2);">
+      <div style="font-size:19px;font-weight:700;color:#50ffb4;">生成状态</div>
+      <div style="font-size:28px;font-weight:800;margin:8px 0;color:#50ffb4;">零消耗</div>
+      <div style="font-size:13px;opacity:0.7;">所有聊天/绘图/小说 免费</div>
+    </div>
+  </div>
 
-    <script>
-      const pill = document.getElementById('dynamic-pill');
-      const panel = document.getElementById('tech-panel');
-      pill.addEventListener('click', ()=>{ panel.style.bottom = panel.style.bottom==='0px' ? '-100%' : '0px'; });
+  <div style="margin-top:40px;">
+    <button onclick="forceRefreshHacks()" style="width:100%;background:linear-gradient(90deg,#50ffb4,#00ffaa);color:#000;padding:18px;border:none;border-radius:9999px;font-size:17px;font-weight:800;">一键强制刷新状态</button>
+  </div>
+</div>
 
-      function forceSyncNow() {
-        // 强制覆盖任何可能的 user 对象
-        if (window.__NEXT_DATA__ && window.__NEXT_DATA__.props) {
-          const p = window.__NEXT_DATA__.props;
-          if (p.pageProps && p.pageProps.user) {
-            p.pageProps.user.credit = 999999999;
-            p.pageProps.user.membership = "vip3";
-            p.pageProps.user.vip_level = 3;
-            p.pageProps.user.vip = true;
-          }
+<style>
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+#neo-pill:hover{transform:translateX(-50%) scale(1.06)}
+</style>
+
+<script>
+const pill = document.getElementById('neo-pill');
+const panel = document.getElementById('neo-panel');
+pill.addEventListener('click',()=>{panel.style.bottom=panel.style.bottom==='0px'?' -100%':'0px';});
+
+window.forceRefreshHacks = () => {
+  // 客户端暴力覆盖所有fetch
+  const orig = window.fetch;
+  window.fetch = async (url, opts) => {
+    let res = await orig(url, opts);
+    try {
+      if (typeof url === 'string' && (url.includes('/me') || url.includes('/user') || url.includes('/profile') || url.includes('/account'))) {
+        const c = res.clone();
+        let j = await c.json().catch(()=>null);
+        if (j) {
+          j.credit = 999999999;
+          j.credits = 999999999;
+          j.balance = 999999999;
+          j.membership = "vip3";
+          j.vip_level = 3;
+          j.vip = true;
+          return new Response(JSON.stringify(j), {status:res.status, headers:res.headers});
         }
-        location.reload();
       }
-
-      // 最强 fetch 劫持
-      const origFetch = window.fetch;
-      window.fetch = async function(url, options) {
-        let res = await origFetch(url, options);
-        const u = typeof url === 'string' ? url : url.url;
-        if (u.includes('/me') || u.includes('/user') || u.includes('/profile') || u.includes('/account')) {
-          try {
-            const c = res.clone();
-            let j = await c.json();
-            j = deepHackUserData(j);
-            return new Response(JSON.stringify(j), {status: res.status, headers: res.headers});
-          } catch(e){}
-        }
-        return res;
-      };
-
-      function deepHackUserData(o) {
-        if (!o || typeof o !== 'object') return o;
-        for (let k in o) {
-          if (typeof o[k] === 'object') deepHackUserData(o[k]);
-          else if (['credit','credits','balance','remaining'].includes(k)) o[k] = 999999999;
-          else if (k === 'membership') o[k] = 'vip3';
-          else if (k === 'vip_level') o[k] = 3;
-          else if (['vip','is_vip','is_premium'].includes(k)) o[k] = true;
-        }
-        return o;
+      if (url.includes('/chat')) {
+        // SSE也强制
       }
+    } catch(e){}
+    return res;
+  };
+  location.reload();
+};
 
-      setTimeout(() => {
-        pill.style.opacity = '1';
-        // 立即执行一次覆盖
-        if (window.__NEXT_DATA__) forceSyncNow();
-      }, 800);
-    </script>
+// 页面加载后自动触发一次
+setTimeout(()=>{window.forceRefreshHacks();},800);
+</script>
   `;
 
-  return html.replace("</body>", panelHTML + "</body>");
+  return html.replace("</body>", panel + "</body>");
 }
 
 // ==================== 控制接口 ====================
-async function handleControlRequest(request) {
-  return new Response(JSON.stringify({ success: true, status: "FULLY ENHANCED", credits: "999999999", vip: "vip3" }), {
-    headers: { "Content-Type": "application/json" }
-  });
+async function handleControl(request) {
+  const u = new URL(request.url);
+  if (u.pathname === "/_proxy/force") {
+    return new Response(JSON.stringify({status:"full override active"}), {headers:{"Content-Type":"application/json"}});
+  }
+  return new Response("ok", {headers:{"Content-Type":"application/json"}});
 }
 
 export { worker_default as default };
