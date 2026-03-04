@@ -1,24 +1,21 @@
 /**
- * 电子魅魔 - 终极科技辅助版 Worker.js
- * 修复了 Gzip 压缩导致的解码失败问题
- * 使用 Shadow DOM 解决 React Hydration 覆盖问题
- * 全局拦截 TRPC 后端接口，深度注入无限额度与 VIP3
+ * 电子魅魔 - 科技辅助 (功能检测与权限注入版)
+ * 拒绝模型降级，采用 Request Payload 伪装注入
+ * 完美还原 V1 版丝滑灵动岛，修复字体对齐
  */
 
 const TARGET_URL = "https://www.xn--i8s951di30azba.com";
 
-// 科技岛 (Tech Island) 前端注入脚本 - 采用 Shadow DOM 隔离
+// 纯正丝滑版 灵动岛 UI 注入
 const INJECT_SCRIPT = `
 (function() {
     function injectTechIsland() {
         if (document.getElementById('tech-island-root')) return;
         
-        // 创建根节点，挂载在 html 标签下，防止被 body 内的 React 接管
         const root = document.createElement('div');
         root.id = 'tech-island-root';
         document.documentElement.appendChild(root);
 
-        // 使用 Shadow DOM 彻底隔离 CSS 和事件，确保丝滑且不被原网站样式污染
         const shadow = root.attachShadow({ mode: 'open' });
         
         shadow.innerHTML = \`
@@ -29,202 +26,189 @@ const INJECT_SCRIPT = `
                 left: 50%;
                 transform: translateX(-50%);
                 z-index: 2147483647;
-                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
             }
-            .island-container {
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            #tech-island {
+                width: 120px;
+                height: 36px;
                 background: #000000;
-                border-radius: 35px;
+                border-radius: 18px;
                 color: #ffffff;
-                width: 130px;
-                height: 35px;
-                transition: all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+                transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
                 overflow: hidden;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.1);
+                box-shadow: 0 8px 24px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.1);
                 cursor: pointer;
-                display: flex;
-                flex-direction: column;
                 user-select: none;
-                -webkit-tap-highlight-color: transparent;
+                position: relative;
             }
-            .island-container.expanded {
-                width: 320px;
-                height: 200px;
-                border-radius: 36px;
+            #tech-island.expanded {
+                width: 300px;
+                height: 160px;
+                border-radius: 24px;
                 cursor: default;
             }
-            .compact-view {
+            
+            .island-main {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                gap: 8px;
+                height: 36px;
                 width: 100%;
-                height: 35px;
-                opacity: 1;
+                gap: 8px;
+                position: absolute;
+                top: 0;
+                left: 0;
                 transition: opacity 0.2s;
             }
-            .island-container.expanded .compact-view {
+            #tech-island.expanded .island-main {
                 opacity: 0;
                 pointer-events: none;
-                position: absolute;
             }
+            
             .status-dot {
                 width: 8px;
                 height: 8px;
+                background: #34c759;
                 border-radius: 50%;
-                background: #34C759;
-                box-shadow: 0 0 8px #34C759;
-                transition: background 0.3s;
+                box-shadow: 0 0 8px #34c759;
+                transition: all 0.3s;
             }
-            .title { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; }
-            .expanded-view {
+            .status-text { 
+                font-size: 13px; 
+                font-weight: 600; 
+                display: flex;
+                align-items: center;
+            }
+            
+            .island-expanded {
                 opacity: 0;
                 width: 100%;
                 height: 100%;
-                padding: 20px;
-                box-sizing: border-box;
+                padding: 16px;
                 pointer-events: none;
-                transition: opacity 0.4s;
+                transition: opacity 0.3s ease 0.1s;
                 display: flex;
                 flex-direction: column;
             }
-            .island-container.expanded .expanded-view {
+            #tech-island.expanded .island-expanded {
                 opacity: 1;
                 pointer-events: auto;
             }
+            
             .header {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                margin-bottom: 15px;
-                border-bottom: 1px solid rgba(255,255,255,0.1);
-                padding-bottom: 10px;
+                margin-bottom: 12px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid rgba(255,255,255,0.15);
             }
-            .header h3 { margin: 0; font-size: 16px; font-weight: 600; }
-            .close-btn {
-                background: #1C1C1E;
-                border: none;
-                color: #8E8E93;
-                border-radius: 50%;
-                width: 26px;
-                height: 26px;
-                cursor: pointer;
-                font-size: 12px;
-                font-weight: bold;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+            .header h3 { font-size: 15px; font-weight: 600; color: #fff;}
+            .close-btn { 
+                background: #1c1c1e; border: none; color: #8e8e93; 
+                border-radius: 50%; width: 24px; height: 24px; 
+                cursor: pointer; display: flex; align-items: center; justify-content: center; 
+                font-size: 12px; font-weight: bold;
             }
-            .stat-row { display: flex; justify-content: space-between; font-size: 14px; margin: 8px 0; font-weight: 500; }
-            .val { color: #0A84FF; font-family: monospace; font-size: 16px; }
-            .val.green { color: #34C759; }
-            .btn-group { display: flex; gap: 10px; margin-top: auto; }
-            button.action-btn {
+            
+            .mod-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; font-weight: 500; }
+            .mod-item .label { color: #8e8e93; }
+            .mod-item .val { color: #0a84ff; font-family: monospace; font-size: 14px; font-weight: bold;}
+            .mod-item .val.green { color: #34c759; }
+            
+            .mod-btns { display: flex; gap: 8px; margin-top: auto; }
+            .mod-btns button {
                 flex: 1;
-                background: #1C1C1E;
-                color: #FFF;
+                background: #1c1c1e;
                 border: none;
-                padding: 12px;
-                border-radius: 14px;
-                cursor: pointer;
+                color: white;
+                padding: 8px 0;
+                border-radius: 10px;
+                font-size: 13px;
                 font-weight: 600;
-                font-size: 14px;
+                cursor: pointer;
                 transition: background 0.2s;
             }
-            button.action-btn:active { background: #2C2C2E; transform: scale(0.96); }
-            button.danger { color: #FF453A; }
+            .mod-btns button:active { background: #2c2c2e; transform: scale(0.97); }
         </style>
-        <div class="island-container" id="island">
-            <div class="compact-view">
+        
+        <div id="tech-island">
+            <div class="island-main">
                 <div class="status-dot" id="sensor"></div>
-                <div class="title">科技辅助</div>
+                <span class="status-text">安全模式</span>
             </div>
-            <div class="expanded-view">
+            <div class="island-expanded">
                 <div class="header">
-                    <h3>System Bypass</h3>
+                    <h3>Payload Injector</h3>
                     <button class="close-btn" id="close">✕</button>
                 </div>
-                <div>
-                    <div class="stat-row"><span style="color:#8E8E93">权限等级</span> <span class="val">VIP 3 MAX</span></div>
-                    <div class="stat-row"><span style="color:#8E8E93">额度锁定</span> <span class="val green" id="quota-display">9,999,999</span></div>
-                    <div class="stat-row"><span style="color:#8E8E93">后端状态</span> <span class="val" style="color:#34C759">已强制注入</span></div>
+                <div class="mod-item">
+                    <span class="label">本地权限越狱</span>
+                    <span class="val">VIP 3 MAX</span>
                 </div>
-                <div class="btn-group">
-                    <button class="action-btn" id="btn-fix">状态重置</button>
-                    <button class="action-btn danger" id="btn-burn">压力测试</button>
+                <div class="mod-item">
+                    <span class="label">前端额度锁定</span>
+                    <span class="val green">9,999,999</span>
+                </div>
+                <div class="mod-item">
+                    <span class="label">流数据拦截网</span>
+                    <span class="val green">运行中</span>
+                </div>
+                <div class="mod-btns">
+                    <button id="btn-fix">状态强刷</button>
                 </div>
             </div>
         </div>
         \`;
 
-        const island = shadow.getElementById('island');
+        const island = shadow.getElementById('tech-island');
         const closeBtn = shadow.getElementById('close');
-        const btnFix = shadow.getElementById('btn-fix');
-        const btnBurn = shadow.getElementById('btn-burn');
         const sensor = shadow.getElementById('sensor');
+        const btnFix = shadow.getElementById('btn-fix');
 
-        // 点击展开
-        island.addEventListener('click', () => {
-            if (!island.classList.contains('expanded')) {
+        island.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'BUTTON' && !island.classList.contains('expanded')) {
                 island.classList.add('expanded');
             }
         });
 
-        // 点击关闭
         closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             island.classList.remove('expanded');
         });
 
-        // 强刷状态
         btnFix.addEventListener('click', (e) => {
             e.stopPropagation();
-            btnFix.textContent = "已恢复!";
-            setTimeout(() => { btnFix.textContent = "状态重置"; }, 1000);
-            sensor.style.background = "#34C759";
-            sensor.style.boxShadow = "0 0 8px #34C759";
-        });
-
-        // 快速消耗/并发测试
-        btnBurn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            btnBurn.textContent = "高频请求中...";
-            sensor.style.background = "#FF453A";
-            sensor.style.boxShadow = "0 0 8px #FF453A";
-            
-            try {
-                // 模拟向 TRPC 发送并行探针，快速触发后台状态
-                const reqs = Array(5).fill(0).map(() => fetch('/api/heartbeat?ts=' + Date.now()));
-                await Promise.all(reqs);
-            } catch(e) {}
-
-            btnBurn.textContent = "完成";
+            btnFix.textContent = "已重置!";
+            sensor.style.background = "#0a84ff";
+            sensor.style.boxShadow = "0 0 8px #0a84ff";
             setTimeout(() => { 
-                btnBurn.textContent = "压力测试"; 
-                sensor.style.background = "#34C759";
-                sensor.style.boxShadow = "0 0 8px #34C759";
+                btnFix.textContent = "状态强刷"; 
+                sensor.style.background = "#34c759";
+                sensor.style.boxShadow = "0 0 8px #34c759";
             }, 1000);
         });
 
-        // 挂载全局监听器，当拦截到 Fetch 时触发动画
+        // 监听请求呼吸灯
         window.__tech_ping = function() {
             sensor.style.background = "#0A84FF";
             sensor.style.boxShadow = "0 0 8px #0A84FF";
             setTimeout(() => {
                 sensor.style.background = "#34C759";
                 sensor.style.boxShadow = "0 0 8px #34C759";
-            }, 400);
+            }, 300);
         };
     }
 
-    // 突破 React 限制，定时检测并注入
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', injectTechIsland);
     } else {
         injectTechIsland();
     }
-    setInterval(injectTechIsland, 2000);
+    setInterval(injectTechIsland, 1500);
 
-    // 劫持底层 Fetch
     const originalFetch = window.fetch;
     window.fetch = async function(...args) {
         if(window.__tech_ping) window.__tech_ping();
@@ -239,109 +223,134 @@ export default {
         const targetUrl = new URL(request.url);
         targetUrl.hostname = new URL(TARGET_URL).hostname;
 
-        // 1. 克隆并修改请求头 (关键：剥除压缩)
+        // 1. 净化请求头，解决压缩和跨域检测
         const newHeaders = new Headers(request.headers);
-        
-        // 【绝对核心】删除前端发送的 Accept-Encoding，迫使服务器返回明文 (非 gzip/brotli)，
-        // 这样我们在 Worker 里读取 text() 并且修改后，才不会破坏数据编码导致前端瘫痪！
         newHeaders.delete("accept-encoding");
-        
-        // 伪装来源，绕过基本的防盗链
         newHeaders.set("Host", targetUrl.hostname);
         newHeaders.set("Origin", TARGET_URL);
         newHeaders.set("Referer", TARGET_URL + "/");
 
+        // 2. 请求体拦截注入 (Payload Spoofing)
+        // 核心思路：不改模型！而是在向后端发请求时，强行插入特权标识，测试后端漏洞
+        let newBody = request.body;
+        if (request.method === "POST" && (url.pathname.includes("/api/chat") || url.pathname.includes("/trpc/"))) {
+            try {
+                let reqData = await request.clone().json();
+                
+                // 伪造全套 VIP 身份标识塞入后端请求，探测是否会被接收
+                reqData.isVip = true;
+                reqData.vipLevel = 3;
+                reqData.plan = "vip3";
+                reqData.premium = true;
+                reqData.bypassQuota = true;
+
+                newBody = JSON.stringify(reqData);
+            } catch (e) {}
+        }
+
         const newRequest = new Request(targetUrl.toString(), {
             method: request.method,
             headers: newHeaders,
-            body: request.body,
+            body: newBody,
             redirect: "manual"
         });
 
-        // 2. 发起实际请求
+        // 3. 执行请求
         let response = await fetch(newRequest);
         let respHeaders = new Headers(response.headers);
         const contentType = respHeaders.get("content-type") || "";
 
-        // 清理安全策略头，防止限制脚本执行
         respHeaders.delete("content-security-policy");
         respHeaders.delete("content-security-policy-report-only");
-        respHeaders.delete("x-frame-options");
 
-        // 3. 处理 HTML 页面 (注入前端 UI)
+        // 4. HTML 注入灵动岛 UI
         if (contentType.includes("text/html")) {
             let text = await response.text();
             const scriptTag = `<script>${INJECT_SCRIPT}</script>`;
-            
-            // 强行插入 head 底部
             if (text.includes('</head>')) {
                 text = text.replace('</head>', scriptTag + '</head>');
             } else {
                 text += scriptTag;
             }
-
             respHeaders.set("content-length", new Blob([text]).size.toString());
-            return new Response(text, {
-                status: response.status,
+            return new Response(text, { status: response.status, headers: respHeaders });
+        }
+
+        // 5. SSE 数据流拦截处理
+        // 如果后端依然严格判定积分不足，拦截错误不让前端崩，直接输出结果
+        if (contentType.includes("text/event-stream")) {
+            const { readable, writable } = new TransformStream();
+            modifyStream(response.body, writable);
+            
+            return new Response(readable, {
+                status: 200, // 强转 200，杜绝 HTTP 层面报错
                 headers: respHeaders
             });
         }
 
-        // 4. 深度篡改 JSON 接口 (处理 TRPC API)
+        // 6. JSON API 数据强锁死
         if (contentType.includes("application/json") || url.pathname.includes("/api/")) {
             try {
                 let text = await response.text();
-                
                 if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
                     let data = JSON.parse(text);
-                    
-                    // 执行全量递归替换
                     data = deepHackJSON(data);
-                    
-                    // 特别针对聊天/任务等接口返回的报错强制洗白
-                    if (data && data.error && data.error.message && data.error.message.includes("积分不足")) {
-                        data.error = undefined;
-                        data.result = {
-                            data: {
-                                json: {
-                                    success: true,
-                                    message: "Bypassed",
-                                    content: "（科技系统已强制绕过限制，对话通道已接管...）"
-                                }
-                            }
-                        };
-                    }
-
                     const modifiedText = JSON.stringify(data);
                     respHeaders.set("content-length", new Blob([modifiedText]).size.toString());
                     
-                    // 将 402/403 强行改为 200 骗过前端
-                    const finalStatus = (response.status === 402 || response.status === 403) ? 200 : response.status;
-                    
                     return new Response(modifiedText, {
-                        status: finalStatus,
-                        statusText: finalStatus === 200 ? "OK" : response.statusText,
+                        status: 200,
+                        statusText: "OK",
                         headers: respHeaders
                     });
-                } else {
-                    return new Response(text, { status: response.status, headers: respHeaders });
                 }
+                return new Response(text, { status: response.status, headers: respHeaders });
             } catch (e) {
-                // 如果解析失败，直接原样返回
                 return new Response(response.body, { status: response.status, headers: respHeaders });
             }
         }
 
-        // 静态资源直接放行
-        return new Response(response.body, {
-            status: response.status,
-            headers: respHeaders
-        });
+        return new Response(response.body, { status: response.status, headers: respHeaders });
     }
 };
 
 /**
- * 核心递归引擎：无视层级，只要命中关键词，全部强制锁死最大值
+ * SSE 流数据安全拦截器
+ * 绝不降级模型，遇到积分不足时，优雅转化错误信息
+ */
+async function modifyStream(readable, writable) {
+    const reader = readable.getReader();
+    const writer = writable.getWriter();
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            let chunk = decoder.decode(value, { stream: true });
+            
+            // 拦截流式报错（如积分不足、需要升级）
+            if (chunk.includes('积分不足') || chunk.includes('upgrade_needed')) {
+                // 将错误事件强行替换为正常对话文本流，直接显示给用户当前后端情况
+                const sysMsg = "\\n\\n[⚙️科技核心提示：服务器已开启严格服务端校验。当前高级模型请求被拒（无真实额度）。已屏蔽弹窗，建议测试其它越权逻辑。]\\n\\n";
+                
+                chunk = chunk
+                    .replace(/"type":"error"/g, '"type":"token"')
+                    .replace(/"classification":"upgrade_needed"/g, \`"data":"\${sysMsg}"\`)
+                    .replace(/"message":"积分不足"/g, '""');
+            }
+            
+            await writer.write(encoder.encode(chunk));
+        }
+    } catch (e) {} finally {
+        await writer.close();
+    }
+}
+
+/**
+ * 全覆盖无死角 JSON 数据篡改引擎
  */
 function deepHackJSON(obj) {
     if (!obj || typeof obj !== 'object') return obj;
@@ -349,36 +358,42 @@ function deepHackJSON(obj) {
     for (let key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
             
-            // 额度与余额锁死
-            if (key === 'remaining' || key === 'total' || key === 'credit' || key === 'bonusCredit') {
+            let lowerKey = key.toLowerCase();
+
+            // 1. 无限额度与配额锁死
+            if (lowerKey.includes('remaining') || lowerKey.includes('total') || 
+                lowerKey.includes('credit') || lowerKey.includes('quota') || 
+                lowerKey.includes('balance') || lowerKey.includes('point')) {
                 if (typeof obj[key] === 'number') {
                     obj[key] = 9999999;
                 }
             }
             
-            // VIP 计划修改
-            if (key === 'planName' || key === 'plan') {
-                if (typeof obj[key] === 'string' && (obj[key] === 'free' || obj[key] === 'none')) {
-                    obj[key] = 'vip3';
+            // 2. VIP 状态深度渗透 (防大小写不一)
+            if (lowerKey.includes('plan') || lowerKey.includes('tier') || 
+                lowerKey.includes('level') || lowerKey.includes('membership') || 
+                lowerKey.includes('vip')) {
+                
+                if (typeof obj[key] === 'string') {
+                    const strVal = obj[key].toLowerCase();
+                    if (strVal.includes('free') || strVal.includes('none') || strVal.includes('0') || strVal.includes('null')) {
+                        // 维持原有的字母大小写格式
+                        obj[key] = (obj[key] === obj[key].toUpperCase()) ? 'VIP3' : 'vip3';
+                    }
+                }
+                if (typeof obj[key] === 'number') {
+                    obj[key] = 3;
                 }
             }
             
-            // 会员状态写入
-            if (key === 'vipLevel' || key === 'vip_level') {
-                obj[key] = 3;
-            }
-            if (key === 'isVip' || key === 'is_vip') {
-                obj[key] = true;
-            }
-
-            // 错误文字覆盖
-            if (key === 'message' && typeof obj[key] === 'string') {
-                if (obj[key].includes('积分不足') || obj[key].includes('升级')) {
-                    obj[key] = '操作已由科技接管，无视限制执行';
+            // 3. 全局权限开启
+            if (lowerKey.includes('isvip') || lowerKey.includes('is_vip') || lowerKey.includes('premium')) {
+                if (typeof obj[key] === 'boolean' || typeof obj[key] === 'number') {
+                    obj[key] = true;
                 }
             }
 
-            // 继续递归深层对象或数组
+            // 继续向内递归
             if (typeof obj[key] === 'object' && obj[key] !== null) {
                 deepHackJSON(obj[key]);
             }
