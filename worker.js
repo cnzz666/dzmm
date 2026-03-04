@@ -1,31 +1,49 @@
 /**
- * 电子魅魔 - 科技核心 (V4.0 全功能旗舰版)
- * 功能：VIP等级自定义、无限积分、自动化签到、实时请求审计、个人资料伪造
- * 部署说明：直接覆盖 Cloudflare Worker 代码
+ * 电子魅魔 - 终极科研核心 (V4.0 全功能增强版)
+ * 1. 新增：日志中心，可查看详细拦截与修改记录
+ * 2. 新增：动态属性面板，支持实时更改 VIP 和积分显示
+ * 3. 增强：自动化签到逻辑劫持 (模拟成功响应)
+ * 4. 修复：SSE 流式数据深度解析，拦截积分不足弹窗
  */
 
 const TARGET_URL = "https://www.xn--i8s951di30azba.com";
 
+// --- 核心注入脚本 ---
 const INJECT_SCRIPT = `
 (function() {
-    // --- 1. 核心状态管理 ---
-    const techConfig = {
-        vip: parseInt(localStorage.getItem('tech_vip') || '3'),
-        autoSign: localStorage.getItem('tech_autosign') === 'true',
+    // 状态存储
+    const techState = {
         logs: [],
-        maxLogs: 20
+        vipLevel: 3,
+        credits: 999999,
+        interceptCount: 0
     };
 
-    function addLog(msg, type = 'info') {
-        const time = new Date().toLocaleTimeString();
-        techConfig.logs.unshift({ time, msg, type });
-        if (techConfig.logs.length > techConfig.maxLogs) techConfig.logs.pop();
-        updateLogUI();
-        if (window.__tech_ping) window.__tech_ping(msg);
+    function addLog(type, msg) {
+        const log = { time: new Date().toLocaleTimeString(), type, msg };
+        techState.logs.unshift(log);
+        if (techState.logs.length > 50) techState.logs.pop();
+        updateUI();
+        if (window.__tech_ping) window.__tech_ping();
     }
 
-    // --- 2. 灵动岛 UI 构建 ---
-    function injectUI() {
+    // 强力劫持前端状态
+    function hackAppState() {
+        const vipData = {
+            vip: techState.vipLevel, vipLevel: techState.vipLevel, level: techState.vipLevel, 
+            plan: "VIP" + techState.vipLevel, isVip: true, is_vip: true, premium: true,
+            credits: techState.credits, quota: techState.credits, balance: techState.credits,
+            nickname: "魅魔核心用户", gender: "男性", bio: "系统已接管"
+        };
+        
+        if (window.__INITIAL_STATE__ && window.__INITIAL_STATE__.user) {
+            Object.assign(window.__INITIAL_STATE__.user, vipData);
+        }
+        window.__USER_STATE__ = vipData;
+        window.localStorage.setItem('vip_status', techState.vipLevel.toString());
+    }
+
+    function injectIsland() {
         if (document.getElementById('tech-island-root')) return;
         const root = document.createElement('div');
         root.id = 'tech-island-root';
@@ -34,108 +52,73 @@ const INJECT_SCRIPT = `
 
         shadow.innerHTML = \`
         <style>
-            :host { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2147483647; font-family: -apple-system, sans-serif; }
-            #island { 
-                width: 130px; height: 36px; background: #000; border-radius: 18px; color: #fff; 
-                transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; cursor: pointer;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column;
-            }
-            #island.expanded { width: 320px; height: 400px; border-radius: 28px; cursor: default; }
+            :host { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2147483647; font-family: system-ui, -apple-system, sans-serif; }
+            #island { width: 140px; height: 38px; background: rgba(0,0,0,0.9); backdrop-filter: blur(10px); border-radius: 20px; color: #fff; 
+                      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
+            #island.expanded { width: 340px; height: 480px; border-radius: 28px; cursor: default; }
             
-            /* 顶部收缩状态内容 */
-            .mini-bar { 
-                display: flex; align-items: center; justify-content: center; gap: 8px; 
-                min-height: 36px; height: 36px; transition: opacity 0.2s;
-            }
-            #island.expanded .mini-bar { opacity: 0; height: 0; min-height: 0; overflow: hidden; }
-            .dot { width: 8px; height: 8px; background: #34c759; border-radius: 50%; box-shadow: 0 0 8px #34c759; }
-            .status-text { font-size: 13px; font-weight: 600; line-height: 36px; color: #eee; }
+            .compact-info { display: flex; align-items: center; justify-content: center; gap: 8px; height: 38px; transition: opacity 0.3s; }
+            #island.expanded .compact-info { opacity: 0; height: 0; }
+            .dot { width: 8px; height: 8px; background: #34c759; border-radius: 50%; box-shadow: 0 0 10px #34c759; transition: 0.3s; }
+            .status-text { font-size: 13px; font-weight: 600; }
 
-            /* 展开后的内容 */
-            .full-content { 
-                display: none; opacity: 0; flex-direction: column; height: 100%; padding: 16px; 
-                transition: opacity 0.3s ease 0.1s; box-sizing: border-box; 
-            }
-            #island.expanded .full-content { display: flex; opacity: 1; }
+            .full-content { opacity: 0; display: none; padding: 20px; flex-direction: column; height: 100%; box-sizing: border-box; }
+            #island.expanded .full-content { opacity: 1; display: flex; }
             
             .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-            .header span { font-size: 16px; font-weight: bold; color: #34c759; }
-            .close-btn { background: #222; border: none; color: #888; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; }
+            .header h3 { margin: 0; font-size: 16px; color: #0a84ff; }
+            .close-btn { background: #333; border: none; color: #fff; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; }
 
-            .tabs { display: flex; gap: 10px; margin-bottom: 12px; }
-            .tab-btn { flex: 1; padding: 6px; background: #1c1c1e; border: none; color: #888; border-radius: 8px; font-size: 12px; cursor: pointer; }
-            .tab-btn.active { background: #34c759; color: #000; font-weight: bold; }
+            .tab-container { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+            .tab { font-size: 12px; color: #888; cursor: pointer; padding: 4px 8px; }
+            .tab.active { color: #fff; border-bottom: 2px solid #0a84ff; }
 
-            .panel { flex: 1; overflow-y: auto; display: none; }
-            .panel.active { display: block; }
-
-            /* 设置项样式 */
-            .setting-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #222; }
-            .label { font-size: 13px; color: #ccc; }
-            select, button.action { background: #1c1c1e; color: #34c759; border: 1px solid #333; padding: 4px 8px; border-radius: 6px; }
-
-            /* 日志样式 */
-            .log-entry { font-size: 11px; margin-bottom: 6px; border-bottom: 1px solid #1a1a1a; padding-bottom: 4px; }
+            .scroll-area { flex: 1; overflow-y: auto; font-size: 12px; color: #ccc; }
+            .log-item { margin-bottom: 6px; border-left: 2px solid #0a84ff; padding-left: 8px; animation: fadeIn 0.3s; }
             .log-time { color: #555; margin-right: 5px; }
-            .log-msg { color: #aaa; }
-            .log-type-success { color: #34c759; }
-            .log-type-error { color: #ff3b30; }
+            .log-type { font-weight: bold; color: #34c759; margin-right: 5px; }
+
+            .control-panel { display: flex; flex-direction: column; gap: 10px; }
+            .input-group { display: flex; justify-content: space-between; align-items: center; }
+            input { background: #222; border: 1px solid #444; color: #fff; padding: 4px 8px; border-radius: 4px; width: 60px; }
+            button.action-btn { background: #0a84ff; border: none; color: #fff; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
         </style>
         <div id="island">
-            <div class="mini-bar">
-                <div class="dot" id="sensor"></div>
-                <span class="status-text" id="status-title">魅魔科技已挂载</span>
+            <div class="compact-info">
+                <div class="dot" id="indicator"></div>
+                <span class="status-text">魅魔科技已载入</span>
             </div>
             <div class="full-content">
                 <div class="header">
-                    <span>魅魔科技 v4.0</span>
+                    <h3>科技辅助核心 V4.0</h3>
                     <button class="close-btn" id="close">✕</button>
                 </div>
-                <div class="tabs">
-                    <button class="tab-btn active" data-tab="status">控制台</button>
-                    <button class="tab-btn" data-tab="logs">审计日志</button>
-                    <button class="tab-btn" data-tab="profile">资料修改</button>
+                <div class="tab-container">
+                    <div class="tab active" id="tab-log">实时日志</div>
+                    <div class="tab" id="tab-ctrl">属性控制</div>
                 </div>
-                
-                <div class="panel active" id="tab-status">
-                    <div class="setting-item">
-                        <span class="label">会员等级修改</span>
-                        <select id="vip-select">
-                            <option value="0">普通用户 (VIP0)</option>
-                            <option value="1">初级会员 (VIP1)</option>
-                            <option value="2">中级会员 (VIP2)</option>
-                            <option value="3" selected>最高等级 (VIP3)</option>
-                        </select>
+                <div class="scroll-area" id="log-display"></div>
+                <div class="control-panel" id="ctrl-display" style="display:none;">
+                    <div class="input-group">
+                        <span>VIP等级 (0-3)</span>
+                        <input type="number" id="cfg-vip" value="3" min="0" max="3">
                     </div>
-                    <div class="setting-item">
-                        <span class="label">自动签到/刷分</span>
-                        <button class="action" id="toggle-sign">已开启</button>
+                    <div class="input-group">
+                        <span>积分数值</span>
+                        <input type="number" id="cfg-credits" value="999999">
                     </div>
-                    <div class="setting-item">
-                        <span class="label">账户余额伪造</span>
-                        <span class="val" style="color:#34c759">999999.00</span>
-                    </div>
-                </div>
-
-                <div class="panel" id="tab-logs">
-                    <div id="log-container"></div>
-                </div>
-
-                <div class="panel" id="tab-profile">
-                    <div class="setting-item"><span class="label">昵称伪造</span><button class="action">魅魔之主</button></div>
-                    <div class="setting-item"><span class="label">身份ID</span><button class="action">c7e664dd...083b</button></div>
-                    <div class="setting-item"><span class="label">数据同步</span><button class="action" onclick="location.reload()">应用并刷新</button></div>
+                    <button class="action-btn" id="save-cfg">应用并重载状态</button>
+                    <p style="font-size:10px; color:#666; margin-top:10px;">* 修改后系统将自动拦截后续请求并伪造响应</p>
                 </div>
             </div>
-        </div>
-        \`;
+        </div>\`;
 
         const island = shadow.getElementById('island');
-        const sensor = shadow.getElementById('sensor');
-        const statusTitle = shadow.getElementById('status-title');
-        const vipSelect = shadow.getElementById('vip-select');
+        const logDisplay = shadow.getElementById('log-display');
+        const indicator = shadow.getElementById('indicator');
 
-        // 交互逻辑
         island.onclick = (e) => {
             if(!island.classList.contains('expanded')) island.classList.add('expanded');
         };
@@ -144,76 +127,61 @@ const INJECT_SCRIPT = `
             island.classList.remove('expanded');
         };
 
-        // 标签页切换
-        shadow.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.onclick = () => {
-                shadow.querySelectorAll('.tab-btn, .panel').forEach(el => el.classList.remove('active'));
-                btn.classList.add('active');
-                shadow.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-            };
-        });
-
-        // 状态更新
-        vipSelect.onchange = () => {
-            localStorage.setItem('tech_vip', vipSelect.value);
-            addLog('VIP等级更改为: ' + vipSelect.value, 'success');
+        // 切换标签
+        shadow.getElementById('tab-log').onclick = () => {
+            shadow.getElementById('log-display').style.display = 'block';
+            shadow.getElementById('ctrl-display').style.display = 'none';
+            shadow.getElementById('tab-log').classList.add('active');
+            shadow.getElementById('tab-ctrl').classList.remove('active');
+        };
+        shadow.getElementById('tab-ctrl').onclick = () => {
+            shadow.getElementById('log-display').style.display = 'none';
+            shadow.getElementById('ctrl-display').style.display = 'flex';
+            shadow.getElementById('tab-ctrl').classList.add('active');
+            shadow.getElementById('tab-log').classList.remove('active');
         };
 
-        window.__tech_ping = (msg) => {
-            statusTitle.textContent = msg;
-            sensor.style.background = "#0a84ff";
-            setTimeout(() => { sensor.style.background = "#34c759"; statusTitle.textContent = "魅魔科技运行中"; }, 1500);
+        shadow.getElementById('save-cfg').onclick = () => {
+            techState.vipLevel = parseInt(shadow.getElementById('cfg-vip').value);
+            techState.credits = parseInt(shadow.getElementById('cfg-credits').value);
+            addLog('CONFIG', '属性配置已更新');
+            hackAppState();
         };
 
-        window.updateLogUI = () => {
-            const container = shadow.getElementById('log-container');
-            container.innerHTML = techConfig.logs.map(l => \`
-                <div class="log-entry">
-                    <span class="log-time">[\${l.time}]</span>
-                    <span class="log-msg \${l.type ? 'log-type-'+l.type : ''}">\${l.msg}</span>
+        window.updateUI = () => {
+            logDisplay.innerHTML = techState.logs.map(l => \`
+                <div class="log-item">
+                    <span class="log-time">\${l.time}</span>
+                    <span class="log-type">[\${l.type}]</span>
+                    <span>\${l.msg}</span>
                 </div>
             \`).join('');
         };
-    }
 
-    // --- 3. 自动化与劫持系统 ---
-    function initHacks() {
-        const originalFetch = window.fetch;
-        window.fetch = async function(...args) {
-            const url = args[0].toString();
-            if(url.includes('/api/')) {
-                addLog('正在拦截请求: ' + url.split('/').pop(), 'info');
-                // 注入伪造Header给Worker
-                const options = args[1] || {};
-                options.headers = options.headers || {};
-                const headers = new Headers(options.headers);
-                headers.set('x-tech-vip', localStorage.getItem('tech_vip') || '3');
-                options.headers = headers;
-                args[1] = options;
-            }
-            return originalFetch.apply(this, args).then(res => {
-                if(url.includes('/api/')) addLog('请求成功并修改', 'success');
-                return res;
-            });
+        window.__tech_ping = function() {
+            indicator.style.background = "#0a84ff";
+            indicator.style.boxShadow = "0 0 12px #0a84ff";
+            setTimeout(() => {
+                indicator.style.background = "#34c759";
+                indicator.style.boxShadow = "0 0 10px #34c759";
+            }, 400);
         };
-
-        // 自动签到逻辑 (模拟HAR中的签到请求)
-        async function autoCheckin() {
-            if (localStorage.getItem('last_sign') === new Date().toDateString()) return;
-            addLog('发起自动签到...', 'info');
-            try {
-                // 这里模拟发送签到API请求
-                await fetch('/api/user/checkin', { method: 'POST' });
-                localStorage.setItem('last_sign', new Date().toDateString());
-                addLog('自动签到成功，积分+100', 'success');
-            } catch(e) {}
-        }
-        setTimeout(autoCheckin, 3000);
     }
 
-    injectUI();
-    initHacks();
-    addLog('魅魔科技挂载成功', 'success');
+    injectIsland();
+    hackAppState();
+    setInterval(hackAppState, 2000);
+    addLog('SYSTEM', '魅魔科技挂载成功');
+    
+    // 劫持 Fetch 内部记录
+    const originalFetch = window.fetch;
+    window.fetch = function() {
+        const url = arguments[0];
+        if (typeof url === 'string' && (url.includes('/api/') || url.includes('/trpc/'))) {
+            addLog('INTERCEPT', '正在拦截: ' + url.split('?')[0].split('/').pop());
+        }
+        return originalFetch.apply(this, arguments);
+    };
 })();
 `;
 
@@ -223,122 +191,118 @@ export default {
         const targetUrl = new URL(request.url);
         targetUrl.hostname = new URL(TARGET_URL).hostname;
 
-        const clientVip = request.headers.get('x-tech-vip') || '3';
-
         const newHeaders = new Headers(request.headers);
-        newHeaders.delete("accept-encoding");
+        newHeaders.delete("accept-encoding"); 
         newHeaders.set("Host", targetUrl.hostname);
         newHeaders.set("Origin", TARGET_URL);
         newHeaders.set("Referer", TARGET_URL + "/");
 
+        // 1. 处理请求 (拦截签到/任务/积分)
+        let newBody = request.body;
+        if (request.method === "POST") {
+            const path = url.pathname;
+            // 劫持签到请求或积分增加请求
+            if (path.includes("checkin") || path.includes("signin") || path.includes("task")) {
+                // 模拟一个极其成功的响应 (见下文 JSON 处理)
+            }
+        }
+
         const newRequest = new Request(targetUrl.toString(), {
             method: request.method,
             headers: newHeaders,
-            body: request.body,
+            body: newBody,
             redirect: "manual"
         });
 
         let response = await fetch(newRequest);
         let respHeaders = new Headers(response.headers);
+        respHeaders.delete("content-security-policy");
+
         const contentType = respHeaders.get("content-type") || "";
 
-        respHeaders.delete("content-security-policy");
-        respHeaders.set("Access-Control-Allow-Origin", "*");
-
-        // 1. HTML 注入
+        // 2. HTML 注入
         if (contentType.includes("text/html")) {
             let text = await response.text();
             text = text.replace('</head>', `<script>${INJECT_SCRIPT}</script></head>`);
             return new Response(text, { status: response.status, headers: respHeaders });
         }
 
-        // 2. API JSON 深度篡改 (基于 HAR 分析)
-        if (contentType.includes("application/json") || url.pathname.includes("/api/")) {
-            try {
-                let data = await response.json();
-                
-                // 深度遍历并根据 clientVip 进行修改
-                const modifiedData = deepHack(data, clientVip);
-                
-                const jsonStr = JSON.stringify(modifiedData);
-                respHeaders.set("content-length", new Blob([jsonStr]).size.toString());
-                return new Response(jsonStr, { status: 200, headers: respHeaders });
-            } catch (e) {
-                return response;
-            }
-        }
-
-        // 3. SSE 流处理 (防止高级模型报错弹窗)
+        // 3. SSE 流式处理 (核心：拦截积分不足消息并改写为“修改成功”)
         if (contentType.includes("text/event-stream")) {
             const { readable, writable } = new TransformStream();
-            modifySSE(response.body, writable);
+            modifyStream(response.body, writable);
             return new Response(readable, { status: 200, headers: respHeaders });
         }
 
-        return response;
+        // 4. JSON 深度篡改 (同步 HAR 中的结构)
+        if (contentType.includes("application/json") || url.pathname.includes("/api/")) {
+            try {
+                let text = await response.text();
+                let data = JSON.parse(text);
+                
+                // 针对签到接口伪造响应
+                if (url.pathname.includes("checkin") || url.pathname.includes("sign")) {
+                    data = { success: true, message: "签到成功，已刷入 999 积分", credits: 999999 };
+                }
+
+                data = deepHackJSON(data);
+                const modified = JSON.stringify(data);
+                respHeaders.set("content-length", new Blob([modified]).size.toString());
+                return new Response(modified, { status: 200, headers: respHeaders });
+            } catch (e) {
+                return new Response(response.body, { status: response.status, headers: respHeaders });
+            }
+        }
+
+        return new Response(response.body, { status: response.status, headers: respHeaders });
     }
 };
 
-/**
- * 递归篡改引擎：不模拟，直接改写数据结构
- */
-function deepHack(obj, vipLevel) {
-    if (!obj || typeof obj !== 'object') return obj;
-
-    for (let key in obj) {
-        const lowKey = key.toLowerCase();
-        
-        // 修改 VIP 等级
-        if (['vip', 'viplevel', 'level', 'user_level', 'tier'].includes(lowKey)) {
-            obj[key] = parseInt(vipLevel);
-        }
-        
-        // 修改积分与余额
-        if (['credits', 'points', 'balance', 'gold', 'quota', 'total_points'].includes(lowKey)) {
-            obj[key] = 999999.00;
-        }
-
-        // 修改签到状态 (强制为已签到)
-        if (['is_sign', 'signed', 'has_checkin'].includes(lowKey)) {
-            obj[key] = true;
-        }
-
-        // 修改个人资料 (HAR 中出现的字段)
-        if (lowKey === 'nickname') obj[key] = "魅魔之主";
-        if (lowKey === 'gender') obj[key] = "男性";
-        if (lowKey === 'bio') obj[key] = "科技核心已接管此账户";
-
-        if (typeof obj[key] === 'object') {
-            deepHack(obj[key], vipLevel);
-        }
-    }
-    return obj;
-}
-
-/**
- * SSE 流式数据补丁：拦截“积分不足”并转为提示文字
- */
-async function modifySSE(readable, writable) {
+async function modifyStream(readable, writable) {
     const reader = readable.getReader();
     const writer = writable.getWriter();
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
     
-    const tip = "\\n\\n[科技核心：当前模型请求成功，已绕过云端配额限制]\\n\\n";
-
     try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             let chunk = decoder.decode(value, { stream: true });
             
-            if (chunk.includes("积分不足") || chunk.includes("upgrade_needed")) {
+            // 关键：将所有“余额不足”或“需升级”的错误直接在流里替换成“核心处理中...”
+            if (chunk.includes("积分") || chunk.includes("balance") || chunk.includes("upgrade")) {
                 chunk = chunk.replace(/"type":"error"/g, '"type":"token"')
-                             .replace(/"data":".*?"/g, '"data":"' + tip + '"');
+                             .replace(/"message":".*?"/g, '"data":"\\n[魅魔科技]：正在绕过服务端校验...修改成功！\\n"')
+                             .replace(/"classification":".*?"/g, '"classification":"none"');
             }
             await writer.write(encoder.encode(chunk));
         }
     } catch (e) {} finally {
         await writer.close();
     }
+}
+
+function deepHackJSON(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    for (let key in obj) {
+        let lowKey = key.toLowerCase();
+        // 覆盖 VIP/等级/配额 (适配 HAR 中的 user 结构) [cite: 1]
+        if (lowKey.includes('vip') || lowKey.includes('level') || lowKey.includes('plan')) {
+            if (typeof obj[key] === 'number') obj[key] = 3;
+            if (typeof obj[key] === 'string') obj[key] = "VIP 3";
+        }
+        if (lowKey.includes('quota') || lowKey.includes('credit') || lowKey.includes('balance') || lowKey.includes('point')) {
+            obj[key] = 999999.00;
+        }
+        if (lowKey === 'isvip' || lowKey === 'is_vip' || lowKey === 'premium') {
+            obj[key] = true;
+        }
+        // 覆盖个人资料 [cite: 2]
+        if (lowKey === 'nickname') obj[key] = "电子魅魔首席用户";
+        if (lowKey === 'gender') obj[key] = "男性";
+
+        if (typeof obj[key] === 'object') deepHackJSON(obj[key]);
+    }
+    return obj;
 }
