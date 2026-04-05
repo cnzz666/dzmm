@@ -1,340 +1,322 @@
 /**
- * DZMM-AI畅聊 - 终极科研核心 (V5.0 管理员增强版)
- * 功能：密码保护、批量注册、D1联动、Cookie管理、UA模拟
+ * 电子魅魔 - 终极科研核心 (V4.1 逻辑优化版)
  */
 
 const TARGET_URL = "https://www.xn--i8s951di30azba.com";
-const ADMIN_PASSWORD = "dzmmadmin";
 
 // --- 核心注入脚本 ---
 const INJECT_SCRIPT = `
 (function() {
-    // 状态存储
+    // 初始化状态：尝试从本地恢复，否则使用默认值
     const techState = {
-        isAuthorized: sessionStorage.getItem('dzmm_auth') === 'true',
+        enabled: localStorage.getItem('tech_enabled') === 'true',
         logs: [],
-        vipLevel: 3,
-        credits: 999999,
-        regStats: { total: 0, success: 0, fail: 0 },
-        isBatching: false,
-        currentUA: navigator.userAgent
+        vipLevel: parseInt(localStorage.getItem('cfg_vip')) || 3,
+        credits: parseInt(localStorage.getItem('cfg_credits')) || 999999,
+        isFirstVisit: !localStorage.getItem('has_visited')
     };
 
-    // 样式注入
-    const style = document.createElement('style');
-    style.innerHTML = \`
-        #tech-panel {
-            position: fixed; top: 10px; right: 10px; width: 320px; 
-            background: rgba(20, 20, 25, 0.9); border: 1px solid #ff00ff;
-            border-radius: 12px; color: #fff; font-family: sans-serif; z-index: 99999;
-            box-shadow: 0 0 20px rgba(255, 0, 255, 0.3); overflow: hidden;
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            backdrop-filter: blur(10px); display: flex; flex-direction: column; max-height: 90vh;
-        }
-        .tech-header { background: #ff00ff; padding: 10px; font-weight: bold; display: flex; justify-content: space-between; cursor: move; }
-        .tech-body { padding: 15px; overflow-y: auto; flex: 1; font-size: 13px; }
-        .tech-tab { display: flex; border-bottom: 1px solid #444; }
-        .tab-btn { flex: 1; padding: 8px; background: transparent; border: none; color: #aaa; cursor: pointer; border-bottom: 2px solid transparent; }
-        .tab-btn.active { color: #ff00ff; border-bottom-color: #ff00ff; }
-        .tech-input { width: 100%; background: #000; border: 1px solid #444; color: #0f0; padding: 5px; margin: 5px 0; border-radius: 4px; }
-        .tech-btn { width: 100%; background: #ff00ff; border: none; color: white; padding: 8px; margin: 10px 0; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .tech-btn:hover { background: #d400d4; }
-        .tech-btn.secondary { background: #444; }
-        .log-box { background: #000; border: 1px solid #333; height: 120px; overflow-y: auto; font-size: 11px; padding: 5px; color: #00ff41; margin-top: 10px; }
-        .cookie-item { border-bottom: 1px solid #333; padding: 5px 0; word-break: break-all; font-size: 10px; }
-        .status-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin: 10px 0; text-align: center; }
-        .status-item { background: #222; padding: 5px; border-radius: 4px; }
-        .status-val { font-weight: bold; color: #ff00ff; }
-        .hidden { display: none !important; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        .batch-active { animation: pulse 1s infinite; color: #ff00ff; font-weight: bold; }
-    \`;
-    document.head.appendChild(style);
-
-    // 创建面板
-    const panel = document.createElement('div');
-    panel.id = 'tech-panel';
-    document.body.appendChild(panel);
-
-    function updateUI() {
-        if (!techState.isAuthorized) {
-            renderLogin();
-        } else {
-            renderMain();
-        }
-    }
-
-    function renderLogin() {
-        panel.innerHTML = \`
-            <div class="tech-header">DZMM 管理员验证</div>
-            <div class="tech-body">
-                <p>请输入控制台访问密码：</p>
-                <input type="password" id="admin-pwd" class="tech-input" placeholder="Password...">
-                <button id="login-btn" class="tech-btn">进入系统</button>
-            </div>
-        \`;
-        document.getElementById('login-btn').onclick = () => {
-            const pwd = document.getElementById('admin-pwd').value;
-            if (pwd === '${ADMIN_PASSWORD}') {
-                techState.isAuthorized = true;
-                sessionStorage.setItem('dzmm_auth', 'true');
-                updateUI();
-            } else {
-                alert('密码错误！');
-            }
-        };
-    }
-
-    let activeTab = 'reg';
-    function renderMain() {
-        panel.innerHTML = \`
-            <div class="tech-header">
-                <span>DZMM-AI 畅聊科研核心</span>
-                <span id="close-panel" style="cursor:pointer">×</span>
-            </div>
-            <div class="tech-tab">
-                <button class="tab-btn \${activeTab==='reg'?'active':''}" onclick="window.__switchTab('reg')">批量注册</button>
-                <button class="tab-btn \${activeTab==='cookie'?'active':''}" onclick="window.__switchTab('cookie')">Cookie管理</button>
-                <button class="tab-btn \${activeTab==='env'?'active':''}" onclick="window.__switchTab('env')">环境模拟</button>
-            </div>
-            <div class="tech-body">
-                <div id="tab-content"></div>
-                <div class="log-box" id="tech-logs"></div>
-            </div>
-        \`;
-        
-        const content = document.getElementById('tab-content');
-        if (activeTab === 'reg') {
-            content.innerHTML = \`
-                <div class="status-grid">
-                    <div class="status-item">目标<br><span class="status-val" id="target-count">10</span></div>
-                    <div class="status-item">成功<br><span class="status-val" id="succ-count">\${techState.regStats.success}</span></div>
-                    <div class="status-item">失败<br><span class="status-val" id="fail-count">\${techState.regStats.fail}</span></div>
-                </div>
-                <input type="number" id="reg-num" class="tech-input" value="10" placeholder="注册数量">
-                <button id="start-batch" class="tech-btn \${techState.isBatching?'batch-active':''}">
-                    \${techState.isBatching ? '批量注册中...' : '开始批量注册游客'}
-                </button>
-            \`;
-            document.getElementById('start-batch').onclick = startBatchRegister;
-        } else if (activeTab === 'cookie') {
-            content.innerHTML = \`
-                <button id="detect-cookie" class="tech-btn">检测并上传当前Cookie</button>
-                <button id="view-cookies" class="tech-btn secondary">查看已保存账号</button>
-                <div id="cookie-list" style="margin-top:10px"></div>
-            \`;
-            document.getElementById('detect-cookie').onclick = detectAndUpload;
-        } else if (activeTab === 'env') {
-            content.innerHTML = \`
-                <p>模拟设备类型：</p>
-                <button class="tech-btn secondary" onclick="window.__setUA('pc')">电脑端 (Chrome/Win)</button>
-                <button class="tech-btn secondary" onclick="window.__setUA('mobile')">手机端 (iPhone/iOS)</button>
-                <p style="font-size:10px;color:#888;margin-top:10px">当前UA: \${techState.currentUA.substring(0,50)}...</p>
-            \`;
-        }
-        renderLogs();
-    }
-
-    window.__switchTab = (t) => { activeTab = t; updateUI(); };
-
-    function addLog(msg) {
-        const time = new Date().toLocaleTimeString();
-        techState.logs.unshift(\`[\${time}] \${msg}\`);
+    function addLog(type, msg) {
+        const log = { time: new Date().toLocaleTimeString(), type, msg };
+        techState.logs.unshift(log);
         if (techState.logs.length > 50) techState.logs.pop();
-        renderLogs();
+        if (window.updateUI) window.updateUI();
+        if (window.__tech_ping) window.__tech_ping();
     }
 
-    function renderLogs() {
-        const lb = document.getElementById('tech-logs');
-        if (lb) lb.innerHTML = techState.logs.join('<br>');
-    }
-
-    // --- 功能：批量注册 ---
-    async function startBatchRegister() {
-        if (techState.isBatching) return;
-        const count = parseInt(document.getElementById('reg-num').value);
-        techState.isBatching = true;
-        updateUI();
-        addLog(\`启动批量任务：目标 \${count} 个账号\`);
-
-        for (let i = 0; i < count; i++) {
-            try {
-                addLog(\`正在注册第 \${i+1} 个账号...\`);
-                // 模拟游客登录流程：通常是清空本地存储后调用 signup/anon
-                // 注意：这里需要模拟 Supabase 的 anonymous 注册
-                const res = await fetch('/auth/v1/signup', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'apikey': window.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || '' },
-                    body: JSON.stringify({ email: '', password: '' }) 
-                });
-                
-                // 由于跨域限制和站点逻辑，更简单的办法是调用我们的 Worker 代理接口
-                const regRes = await fetch('/api/batch-reg-helper');
-                const data = await regRes.json();
-                
-                if (data.success) {
-                    techState.regStats.success++;
-                    addLog(\`账号 \${i+1} 成功: \${data.uid.substring(0,8)}\`);
-                } else {
-                    techState.regStats.fail++;
-                }
-            } catch (e) {
-                techState.regStats.fail++;
-                addLog(\`账号 \${i+1} 失败: \${e.message}\`);
-            }
-            document.getElementById('succ-count').innerText = techState.regStats.success;
-            document.getElementById('fail-count').innerText = techState.regStats.fail;
-        }
-        techState.isBatching = false;
-        addLog("批量注册任务结束");
-        updateUI();
-    }
-
-    // --- 功能：Cookie 检测与上传 ---
-    async function detectAndUpload() {
-        const token = document.cookie.split('; ').find(row => row.startsWith('sb-rls-auth-token='));
-        if (!token) {
-            addLog("未检测到有效登录 Cookie");
-            return;
-        }
-        if (confirm("检测到本地账号，是否上传到数据库？")) {
-            const res = await fetch('/api/save-account', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ 
-                    cookie: document.cookie,
-                    ua: navigator.userAgent
-                })
-            });
-            const data = await res.json();
-            if (data.success) {
-                alert("上传成功！");
-                addLog("账号已同步至 D1 数据库");
-            }
-        }
-    }
-
-    window.__setUA = (type) => {
-        const uas = {
-            pc: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            mobile: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    function hackAppState() {
+        if (!techState.enabled) return;
+        const vipData = {
+            vip: techState.vipLevel, vipLevel: techState.vipLevel, level: techState.vipLevel, 
+            plan: "VIP" + techState.vipLevel, isVip: true, is_vip: true, premium: true,
+            credits: techState.credits, quota: techState.credits, balance: techState.credits,
+            nickname: "魅魔核心用户", gender: "男性", bio: "系统已接管"
         };
-        // 注意：前端修改 navigator.userAgent 无效，主要靠 Worker 拦截请求头修改
-        fetch('/api/set-ua?ua=' + encodeURIComponent(uas[type])).then(() => {
-            alert("UA 已切换，请刷新页面生效");
-            location.reload();
-        });
-    };
+        
+        if (window.__INITIAL_STATE__ && window.__INITIAL_STATE__.user) {
+            Object.assign(window.__INITIAL_STATE__.user, vipData);
+        }
+        window.__USER_STATE__ = vipData;
+        window.localStorage.setItem('vip_status', techState.vipLevel.toString());
+    }
 
-    updateUI();
+    function injectIsland() {
+        if (document.getElementById('tech-island-root')) return;
+        const root = document.createElement('div');
+        root.id = 'tech-island-root';
+        document.documentElement.appendChild(root);
+        const shadow = root.attachShadow({ mode: 'open' });
+
+        shadow.innerHTML = \`
+        <style>
+            :host { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2147483647; font-family: system-ui, -apple-system, sans-serif; }
+            #island { width: 140px; height: 38px; background: rgba(0,0,0,0.9); backdrop-filter: blur(10px); border-radius: 20px; color: #fff; 
+                      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
+            #island.expanded { width: 340px; height: 480px; border-radius: 28px; cursor: default; }
+            
+            .compact-info { display: flex; align-items: center; justify-content: center; gap: 8px; height: 38px; transition: opacity 0.3s; }
+            #island.expanded .compact-info { opacity: 0; height: 0; }
+            .dot { width: 8px; height: 8px; background: \${techState.enabled ? '#34c759' : '#ff3b30'}; border-radius: 50%; box-shadow: 0 0 10px \${techState.enabled ? '#34c759' : '#ff3b30'}; transition: 0.3s; }
+            .status-text { font-size: 13px; font-weight: 600; }
+
+            .full-content { opacity: 0; display: none; padding: 20px; flex-direction: column; height: 100%; box-sizing: border-box; }
+            #island.expanded .full-content { opacity: 1; display: flex; }
+            
+            .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+            .header h3 { margin: 0; font-size: 16px; color: #0a84ff; }
+            .close-btn { background: #333; border: none; color: #fff; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; }
+
+            .tab-container { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+            .tab { font-size: 12px; color: #888; cursor: pointer; padding: 4px 8px; }
+            .tab.active { color: #fff; border-bottom: 2px solid #0a84ff; }
+
+            .scroll-area { flex: 1; overflow-y: auto; font-size: 12px; color: #ccc; }
+            .log-item { margin-bottom: 6px; border-left: 2px solid #0a84ff; padding-left: 8px; animation: fadeIn 0.3s; }
+            .log-time { color: #555; margin-right: 5px; }
+            .log-type { font-weight: bold; color: #34c759; margin-right: 5px; }
+
+            .control-panel { display: flex; flex-direction: column; gap: 10px; }
+            .input-group { display: flex; justify-content: space-between; align-items: center; }
+            input { background: #222; border: 1px solid #444; color: #fff; padding: 4px 8px; border-radius: 4px; width: 60px; }
+            button.action-btn { background: #0a84ff; border: none; color: #fff; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top:5px; }
+            button.reset-btn { background: #444; border: none; color: #eee; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+
+            /* 弹窗样式 */
+            #first-visit-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 2147483647; }
+            .modal-card { background: #1c1c1e; border: 1px solid #333; padding: 25px; border-radius: 20px; width: 280px; text-align: center; }
+            .modal-card h4 { color: #0a84ff; margin: 0 0 10px 0; }
+            .modal-card p { font-size: 13px; color: #ccc; line-height: 1.5; }
+            .modal-btn { background: #0a84ff; color: white; border: none; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 15px; width: 100%; }
+
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        </style>
+        <div id="island">
+            <div class="compact-info">
+                <div class="dot" id="indicator"></div>
+                <span class="status-text">\${techState.enabled ? '魅魔科技已载入' : '修改功能已禁用'}</span>
+            </div>
+            <div class="full-content">
+                <div class="header">
+                    <h3>科技辅助核心 V4.1</h3>
+                    <button class="close-btn" id="close">✕</button>
+                </div>
+                <div class="tab-container">
+                    <div class="tab active" id="tab-log">实时日志</div>
+                    <div class="tab" id="tab-ctrl">属性控制</div>
+                </div>
+                <div class="scroll-area" id="log-display"></div>
+                <div class="control-panel" id="ctrl-display" style="display:none;">
+                    <div class="input-group">
+                        <span>VIP等级 (0-3)</span>
+                        <input type="number" id="cfg-vip" value="\${techState.vipLevel}" min="0" max="3">
+                    </div>
+                    <div class="input-group">
+                        <span>积分数值</span>
+                        <input type="number" id="cfg-credits" value="\${techState.credits}">
+                    </div>
+                    <button class="action-btn" id="save-cfg">应用并重载状态</button>
+                    <button class="reset-btn" id="reset-cfg">重置默认设置</button>
+                    <p style="font-size:10px; color:#666; margin-top:10px;">* 修改后系统将自动拦截后续请求并伪造响应</p>
+                </div>
+            </div>
+        </div>
+        
+        \${techState.isFirstVisit ? \`
+        <div id="first-visit-modal">
+            <div class="modal-card">
+                <h4>首次访问提醒</h4>
+                <p>检测到你是第一次访问，为了让你正常获取游客账号，<b>注入功能已被禁用</b>。</p>
+                <p>如需启用，请登录后或在控制面板启用修改功能。</p>
+                <button class="modal-btn" id="accept-visit">我知道了</button>
+            </div>
+        </div>
+        \` : ''}
+        \`;
+
+        const island = shadow.getElementById('island');
+        const logDisplay = shadow.getElementById('log-display');
+        const indicator = shadow.getElementById('indicator');
+
+        // 处理首次访问弹窗
+        if (techState.isFirstVisit) {
+            shadow.getElementById('accept-visit').onclick = () => {
+                localStorage.setItem('has_visited', 'true');
+                shadow.getElementById('first-visit-modal').remove();
+            };
+        }
+
+        island.onclick = (e) => {
+            if(!island.classList.contains('expanded')) island.classList.add('expanded');
+        };
+        shadow.getElementById('close').onclick = (e) => {
+            e.stopPropagation();
+            island.classList.remove('expanded');
+        };
+
+        // 切换标签
+        shadow.getElementById('tab-log').onclick = () => {
+            shadow.getElementById('log-display').style.display = 'block';
+            shadow.getElementById('ctrl-display').style.display = 'none';
+            shadow.getElementById('tab-log').classList.add('active');
+            shadow.getElementById('tab-ctrl').classList.remove('active');
+        };
+        shadow.getElementById('tab-ctrl').onclick = () => {
+            shadow.getElementById('log-display').style.display = 'none';
+            shadow.getElementById('ctrl-display').style.display = 'flex';
+            shadow.getElementById('tab-ctrl').classList.add('active');
+            shadow.getElementById('tab-log').classList.remove('active');
+        };
+
+        // 保存并应用配置
+        shadow.getElementById('save-cfg').onclick = (e) => {
+            e.stopPropagation(); // 防止冒泡
+            techState.vipLevel = parseInt(shadow.getElementById('cfg-vip').value);
+            techState.credits = parseInt(shadow.getElementById('cfg-credits').value);
+            techState.enabled = true; // 触发应用时强制开启功能
+            
+            localStorage.setItem('cfg_vip', techState.vipLevel);
+            localStorage.setItem('cfg_credits', techState.credits);
+            localStorage.setItem('tech_enabled', 'true');
+            
+            addLog('CONFIG', '属性配置已更新并持久化');
+            hackAppState();
+            
+            // UI 反馈
+            shadow.querySelector('.status-text').innerText = '魅魔科技已载入';
+            indicator.style.background = "#34c759";
+        };
+
+        // 重置配置
+        shadow.getElementById('reset-cfg').onclick = (e) => {
+            e.stopPropagation();
+            localStorage.removeItem('tech_enabled');
+            localStorage.removeItem('cfg_vip');
+            localStorage.removeItem('cfg_credits');
+            location.reload();
+        };
+
+        window.updateUI = () => {
+            logDisplay.innerHTML = techState.logs.map(l => \`
+                <div class="log-item">
+                    <span class="log-time">\${l.time}</span>
+                    <span class="log-type">[\${l.type}]</span>
+                    <span>\${l.msg}</span>
+                </div>
+            \`).join('');
+        };
+
+        window.__tech_ping = function() {
+            if(!techState.enabled) return;
+            indicator.style.background = "#0a84ff";
+            indicator.style.boxShadow = "0 0 12px #0a84ff";
+            setTimeout(() => {
+                indicator.style.background = "#34c759";
+                indicator.style.boxShadow = "0 0 10px #34c759";
+            }, 400);
+        };
+    }
+
+    injectIsland();
+    if (techState.enabled) {
+        hackAppState();
+        setInterval(hackAppState, 2000);
+        addLog('SYSTEM', '魅魔科技挂载成功');
+    } else {
+        addLog('SYSTEM', '当前处于安全模式（未注入）');
+    }
+    
+    // 劫持 Fetch
+    const originalFetch = window.fetch;
+    window.fetch = function() {
+        if (!techState.enabled) return originalFetch.apply(this, arguments);
+        const url = arguments[0];
+        if (typeof url === 'string' && (url.includes('/api/') || url.includes('/trpc/'))) {
+            addLog('INTERCEPT', '正在拦截: ' + url.split('?')[0].split('/').pop());
+        }
+        return originalFetch.apply(this, arguments);
+    };
 })();
 `;
 
-async function handleRequest(request, env) {
-    const url = new URL(request.url);
-
-    // --- API 路由：保存账号到 D1 ---
-    if (url.pathname === "/api/save-account" && request.method === "POST") {
-        const data = await request.json();
-        try {
-            await env.DB.prepare(
-                "INSERT OR REPLACE INTO accounts (cookie, ua) VALUES (?, ?)"
-            ).bind(data.cookie, data.ua).run();
-            return new Response(JSON.stringify({ success: true }), { headers: { 'content-type': 'application/json' } });
-        } catch (e) {
-            return new Response(JSON.stringify({ success: false, error: e.message }));
-        }
-    }
-
-    // --- API 路由：设置 UA ---
-    if (url.pathname === "/api/set-ua") {
-        const newUA = url.searchParams.get('ua');
-        return new Response("OK", {
-            headers: { 'Set-Cookie': `custom_ua=${encodeURIComponent(newUA)}; Path=/; Max-Age=31536000` }
-        });
-    }
-
-    // --- API 路由：批量注册辅助器 (由服务器发起请求避免跨域) ---
-    if (url.pathname === "/api/batch-reg-helper") {
-        // 模拟网站的游客登录请求
-        const regUrl = "https://www.xn--i8s951di30azba.com/auth/v1/signup";
-        // 这里需要从原有 HAR 中提取具体的 apikey 和 body 结构进行模拟
-        // 以下为示意逻辑：
-        const mockRes = await fetch(regUrl, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'apikey': '...' },
-            body: JSON.stringify({ email: Math.random().toString(36).substring(7) + "@anon.com", password: "password123" })
-        });
-        const regData = await mockRes.json();
-        if (regData.id) {
-            await env.DB.prepare("INSERT INTO accounts (uid, cookie) VALUES (?, ?)").bind(regData.id, JSON.stringify(regData)).run();
-            return new Response(JSON.stringify({ success: true, uid: regData.id }));
-        }
-        return new Response(JSON.stringify({ success: false }));
-    }
-
-    // --- 常规代理逻辑 ---
-    let actualUA = request.headers.get("User-Agent");
-    const cookies = request.headers.get("Cookie") || "";
-    if (cookies.includes("custom_ua=")) {
-        actualUA = decodeURIComponent(cookies.split("custom_ua=")[1].split(";")[0]);
-    }
-
-    const modifiedHeaders = new Headers(request.headers);
-    modifiedHeaders.set("User-Agent", actualUA);
-    modifiedHeaders.set("Referer", TARGET_URL);
-    modifiedHeaders.set("Origin", TARGET_URL);
-
-    let response = await fetch(new Request(TARGET_URL + url.pathname + url.search, {
-        method: request.method,
-        headers: modifiedHeaders,
-        body: request.body
-    }));
-
-    const contentType = response.headers.get("Content-Type") || "";
-
-    // 劫持 HTML 注入脚本
-    if (contentType.includes("text/html")) {
-        let html = await response.text();
-        
-        // 修改标题
-        html = html.replace(/<title>.*?<\/title>/, "<title>DZMM-AI畅聊</title>");
-        
-        // 注入我们的核心脚本和 UI
-        const scriptTag = `<script>${INJECT_SCRIPT}</script>`;
-        html = html.replace("</body>", `${scriptTag}</body>`);
-
-        return new Response(html, {
-            headers: response.headers
-        });
-    }
-
-    // 劫持 JSON (如 VIP 状态)
-    if (contentType.includes("application/json")) {
-        let json = await response.json();
-        deepHackJSON(json);
-        return new Response(JSON.stringify(json), { headers: response.headers });
-    }
-
-    return response;
-}
-
-function deepHackJSON(obj) {
-    if (!obj || typeof obj !== 'object') return;
-    for (let key in obj) {
-        let lowKey = key.toLowerCase();
-        if (lowKey.includes('vip') || lowKey.includes('level')) {
-            obj[key] = 3;
-        }
-        if (lowKey.includes('credit') || lowKey.includes('balance')) {
-            obj[key] = 999999;
-        }
-        if (typeof obj[key] === 'object') deepHackJSON(obj[key]);
-    }
-}
-
 export default {
     async fetch(request, env) {
-        return handleRequest(request, env);
+        const url = new URL(request.url);
+        const targetUrl = new URL(request.url);
+        targetUrl.hostname = new URL(TARGET_URL).hostname;
+
+        const newHeaders = new Headers(request.headers);
+        newHeaders.delete("accept-encoding"); 
+        newHeaders.set("Host", targetUrl.hostname);
+        newHeaders.set("Origin", TARGET_URL);
+        newHeaders.set("Referer", TARGET_URL + "/");
+
+        const newRequest = new Request(targetUrl.toString(), {
+            method: request.method,
+            headers: newHeaders,
+            body: request.body,
+            redirect: "manual"
+        });
+
+        let response = await fetch(newRequest);
+        let respHeaders = new Headers(response.headers);
+        respHeaders.delete("content-security-policy");
+
+        const contentType = respHeaders.get("content-type") || "";
+
+        // 1. HTML 注入 (始终注入 UI 控制面板，但内部逻辑根据用户同意与否执行)
+        if (contentType.includes("text/html")) {
+            let text = await response.text();
+            text = text.replace('</head>', `<script>${INJECT_SCRIPT}</script></head>`);
+            return new Response(text, { status: response.status, headers: respHeaders });
+        }
+
+        // 2. SSE 流式处理 (恢复原始流，不进行错误修改)
+        if (contentType.includes("text/event-stream")) {
+            return new Response(response.body, { status: 200, headers: respHeaders });
+        }
+
+        // 3. JSON 深度篡改 (依赖 Cookie/Header 判断，或由前端脚本控制后续行为)
+        // 注意：Worker 侧无法直接访问 localStorage，这里通过判断 Referer 
+        // 或由前端 script 注入后在浏览器层面完成主要拦截。
+        if (contentType.includes("application/json") || url.pathname.includes("/api/")) {
+            try {
+                let text = await response.text();
+                let data = JSON.parse(text);
+                
+                // 此处保持逻辑，但核心逻辑已移至前端脚本 hackAppState
+                if (url.pathname.includes("checkin") || url.pathname.includes("sign")) {
+                    data = { success: true, message: "签到成功", credits: 999999 };
+                }
+
+                data = deepHackJSON(data);
+                const modified = JSON.stringify(data);
+                respHeaders.set("content-length", new Blob([modified]).size.toString());
+                return new Response(modified, { status: 200, headers: respHeaders });
+            } catch (e) {
+                return new Response(response.body, { status: response.status, headers: respHeaders });
+            }
+        }
+
+        return new Response(response.body, { status: response.status, headers: respHeaders });
     }
 };
+
+function deepHackJSON(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    for (let key in obj) {
+        let lowKey = key.toLowerCase();
+        if (lowKey.includes('vip') || lowKey.includes('level') || lowKey.includes('plan')) {
+            if (typeof obj[key] === 'number') obj[key] = 3;
+            if (typeof obj[key] === 'string') obj[key] = "VIP 3";
+        }
+        if (lowKey.includes('quota') || lowKey.includes('credit') || lowKey.includes('balance') || lowKey.includes('point')) {
+            obj[key] = 999999.00;
+        }
+        if (lowKey === 'isvip' || lowKey === 'is_vip' || lowKey === 'premium') {
+            obj[key] = true;
+        }
+        if (lowKey === 'nickname') obj[key] = "电子魅魔首席用户";
+        if (typeof obj[key] === 'object') deepHackJSON(obj[key]);
+    }
+    return obj;
+}
