@@ -6,7 +6,7 @@
  * 4. 修复：SSE 流式数据深度解析，拦截积分不足弹窗
  */
 
-const TARGET_URL = "https://dzmm.ai";
+const TARGET_URL = "https://dzmm-home.github.io/dzmm-addr/";
 
 // --- 核心注入脚本 ---
 const INJECT_SCRIPT = `
