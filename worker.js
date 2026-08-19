@@ -1,34 +1,32 @@
 /**
- * 电子魅魔 - 终极科研核心 (V4.0 全功能增强版)
- * 1. 新增：日志中心，可查看详细拦截与修改记录
- * 2. 新增：动态属性面板，支持实时更改 VIP 和积分显示
- * 3. 增强：自动化签到逻辑劫持 (模拟成功响应)
- * 4. 修复：SSE 流式数据深度解析，拦截积分不足弹窗
+ * 电子魅魔 - 终极科研核心 (V4.2 修复版)
+ * 修复登录、权限控制、Cookie管理等核心问题
  */
 
-const TARGET_URL = "https://dzmm-home.github.io/dzmm-addr/";
+const TARGET_URL = "https://www.girlloveai.com";
 
 // --- 核心注入脚本 ---
 const INJECT_SCRIPT = `
 (function() {
-    // 状态存储
+    // 初始化状态：尝试从本地恢复，否则使用默认值
     const techState = {
+        enabled: localStorage.getItem('tech_enabled') === 'true',
         logs: [],
-        vipLevel: 3,
-        credits: 999999,
-        interceptCount: 0
+        vipLevel: parseInt(localStorage.getItem('cfg_vip')) || 3,
+        credits: parseInt(localStorage.getItem('cfg_credits')) || 999999,
+        isFirstVisit: !localStorage.getItem('has_visited')
     };
 
     function addLog(type, msg) {
         const log = { time: new Date().toLocaleTimeString(), type, msg };
         techState.logs.unshift(log);
         if (techState.logs.length > 50) techState.logs.pop();
-        updateUI();
+        if (window.updateUI) window.updateUI();
         if (window.__tech_ping) window.__tech_ping();
     }
 
-    // 强力劫持前端状态
     function hackAppState() {
+        if (!techState.enabled) return;
         const vipData = {
             vip: techState.vipLevel, vipLevel: techState.vipLevel, level: techState.vipLevel, 
             plan: "VIP" + techState.vipLevel, isVip: true, is_vip: true, premium: true,
@@ -59,7 +57,7 @@ const INJECT_SCRIPT = `
             
             .compact-info { display: flex; align-items: center; justify-content: center; gap: 8px; height: 38px; transition: opacity 0.3s; }
             #island.expanded .compact-info { opacity: 0; height: 0; }
-            .dot { width: 8px; height: 8px; background: #34c759; border-radius: 50%; box-shadow: 0 0 10px #34c759; transition: 0.3s; }
+            .dot { width: 8px; height: 8px; background: \${techState.enabled ? '#34c759' : '#ff3b30'}; border-radius: 50%; box-shadow: 0 0 10px \${techState.enabled ? '#34c759' : '#ff3b30'}; transition: 0.3s; }
             .status-text { font-size: 13px; font-weight: 600; }
 
             .full-content { opacity: 0; display: none; padding: 20px; flex-direction: column; height: 100%; box-sizing: border-box; }
@@ -81,43 +79,82 @@ const INJECT_SCRIPT = `
             .control-panel { display: flex; flex-direction: column; gap: 10px; }
             .input-group { display: flex; justify-content: space-between; align-items: center; }
             input { background: #222; border: 1px solid #444; color: #fff; padding: 4px 8px; border-radius: 4px; width: 60px; }
-            button.action-btn { background: #0a84ff; border: none; color: #fff; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+            button.action-btn { background: #0a84ff; border: none; color: #fff; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top:5px; }
+            button.reset-btn { background: #444; border: none; color: #eee; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+            textarea { background: #222; border: 1px solid #444; color: #fff; padding: 4px 8px; border-radius: 4px; width: 100%; resize: vertical; font-size: 12px; }
+            .cookie-area { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+
+            /* 弹窗样式 */
+            #first-visit-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 2147483647; }
+            .modal-card { background: #1c1c1e; border: 1px solid #333; padding: 25px; border-radius: 20px; width: 280px; text-align: center; }
+            .modal-card h4 { color: #0a84ff; margin: 0 0 10px 0; }
+            .modal-card p { font-size: 13px; color: #ccc; line-height: 1.5; }
+            .modal-btn { background: #0a84ff; color: white; border: none; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 15px; width: 100%; }
 
             @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
         </style>
         <div id="island">
             <div class="compact-info">
                 <div class="dot" id="indicator"></div>
-                <span class="status-text">魅魔科技已载入</span>
+                <span class="status-text">\${techState.enabled ? '魅魔科技已载入' : '修改功能已禁用'}</span>
             </div>
             <div class="full-content">
                 <div class="header">
-                    <h3>科技辅助核心 V4.0</h3>
+                    <h3>科技辅助核心 V4.2</h3>
                     <button class="close-btn" id="close">✕</button>
                 </div>
                 <div class="tab-container">
                     <div class="tab active" id="tab-log">实时日志</div>
                     <div class="tab" id="tab-ctrl">属性控制</div>
+                    <div class="tab" id="tab-cookie">Cookie</div>
                 </div>
                 <div class="scroll-area" id="log-display"></div>
                 <div class="control-panel" id="ctrl-display" style="display:none;">
                     <div class="input-group">
                         <span>VIP等级 (0-3)</span>
-                        <input type="number" id="cfg-vip" value="3" min="0" max="3">
+                        <input type="number" id="cfg-vip" value="\${techState.vipLevel}" min="0" max="3">
                     </div>
                     <div class="input-group">
                         <span>积分数值</span>
-                        <input type="number" id="cfg-credits" value="999999">
+                        <input type="number" id="cfg-credits" value="\${techState.credits}">
                     </div>
                     <button class="action-btn" id="save-cfg">应用并重载状态</button>
+                    <button class="reset-btn" id="reset-cfg">重置默认设置</button>
                     <p style="font-size:10px; color:#666; margin-top:10px;">* 修改后系统将自动拦截后续请求并伪造响应</p>
                 </div>
+                <div class="control-panel cookie-area" id="cookie-display" style="display:none;">
+                    <span style="font-size:12px;">当前Cookie</span>
+                    <textarea id="cookie-view" rows="3" readonly></textarea>
+                    <span style="font-size:12px;">注入Cookie (格式: key=value; key2=value2)</span>
+                    <textarea id="cookie-input" rows="3" placeholder="粘贴Cookie字符串..."></textarea>
+                    <button class="action-btn" id="apply-cookie">注入并刷新</button>
+                </div>
             </div>
-        </div>\`;
+        </div>
+        
+        \${techState.isFirstVisit ? \`
+        <div id="first-visit-modal">
+            <div class="modal-card">
+                <h4>首次访问提醒</h4>
+                <p>检测到你是第一次访问，为了让你正常获取游客账号，<b>注入功能已被禁用</b>。</p>
+                <p>如需启用，请登录后或在控制面板启用修改功能。</p>
+                <button class="modal-btn" id="accept-visit">我知道了</button>
+            </div>
+        </div>
+        \` : ''}
+        \`;
 
         const island = shadow.getElementById('island');
         const logDisplay = shadow.getElementById('log-display');
         const indicator = shadow.getElementById('indicator');
+
+        // 处理首次访问弹窗
+        if (techState.isFirstVisit) {
+            shadow.getElementById('accept-visit').onclick = () => {
+                localStorage.setItem('has_visited', 'true');
+                shadow.getElementById('first-visit-modal').remove();
+            };
+        }
 
         island.onclick = (e) => {
             if(!island.classList.contains('expanded')) island.classList.add('expanded');
@@ -128,24 +165,64 @@ const INJECT_SCRIPT = `
         };
 
         // 切换标签
-        shadow.getElementById('tab-log').onclick = () => {
-            shadow.getElementById('log-display').style.display = 'block';
-            shadow.getElementById('ctrl-display').style.display = 'none';
-            shadow.getElementById('tab-log').classList.add('active');
-            shadow.getElementById('tab-ctrl').classList.remove('active');
-        };
-        shadow.getElementById('tab-ctrl').onclick = () => {
-            shadow.getElementById('log-display').style.display = 'none';
-            shadow.getElementById('ctrl-display').style.display = 'flex';
-            shadow.getElementById('tab-ctrl').classList.add('active');
-            shadow.getElementById('tab-log').classList.remove('active');
+        function switchTab(tabId) {
+            ['log-display','ctrl-display','cookie-display'].forEach(id => shadow.getElementById(id).style.display = 'none');
+            ['tab-log','tab-ctrl','tab-cookie'].forEach(id => shadow.getElementById(id).classList.remove('active'));
+            shadow.getElementById(tabId).style.display = tabId==='log-display'?'block':'flex';
+            shadow.getElementById('tab-'+tabId.split('-')[0]).classList.add('active');
+        }
+        shadow.getElementById('tab-log').onclick = () => switchTab('log-display');
+        shadow.getElementById('tab-ctrl').onclick = () => switchTab('ctrl-display');
+        shadow.getElementById('tab-cookie').onclick = () => {
+            switchTab('cookie-display');
+            // 刷新当前cookie显示
+            shadow.getElementById('cookie-view').value = document.cookie;
         };
 
-        shadow.getElementById('save-cfg').onclick = () => {
+        // 应用Cookie注入
+        shadow.getElementById('apply-cookie').onclick = () => {
+            const cookieStr = shadow.getElementById('cookie-input').value.trim();
+            if (cookieStr) {
+                // 简单拆分并设置cookie
+                cookieStr.split(';').forEach(pair => {
+                    const eqIdx = pair.indexOf('=');
+                    if (eqIdx > 0) {
+                        const key = pair.substring(0, eqIdx).trim();
+                        const val = pair.substring(eqIdx+1).trim();
+                        document.cookie = key + '=' + val + ';path=/';
+                    }
+                });
+                addLog('COOKIE', '已注入Cookie，页面将刷新');
+                setTimeout(() => location.reload(), 500);
+            }
+        };
+
+        // 保存并应用配置
+        shadow.getElementById('save-cfg').onclick = (e) => {
+            e.stopPropagation();
             techState.vipLevel = parseInt(shadow.getElementById('cfg-vip').value);
             techState.credits = parseInt(shadow.getElementById('cfg-credits').value);
-            addLog('CONFIG', '属性配置已更新');
+            techState.enabled = true; // 触发应用时强制开启功能
+            
+            localStorage.setItem('cfg_vip', techState.vipLevel);
+            localStorage.setItem('cfg_credits', techState.credits);
+            localStorage.setItem('tech_enabled', 'true');
+            
+            addLog('CONFIG', '属性配置已更新并持久化');
             hackAppState();
+            
+            // UI 反馈
+            shadow.querySelector('.status-text').innerText = '魅魔科技已载入';
+            indicator.style.background = "#34c759";
+        };
+
+        // 重置配置
+        shadow.getElementById('reset-cfg').onclick = (e) => {
+            e.stopPropagation();
+            localStorage.removeItem('tech_enabled');
+            localStorage.removeItem('cfg_vip');
+            localStorage.removeItem('cfg_credits');
+            location.reload();
         };
 
         window.updateUI = () => {
@@ -159,6 +236,7 @@ const INJECT_SCRIPT = `
         };
 
         window.__tech_ping = function() {
+            if(!techState.enabled) return;
             indicator.style.background = "#0a84ff";
             indicator.style.boxShadow = "0 0 12px #0a84ff";
             setTimeout(() => {
@@ -169,18 +247,37 @@ const INJECT_SCRIPT = `
     }
 
     injectIsland();
-    hackAppState();
-    setInterval(hackAppState, 2000);
-    addLog('SYSTEM', '魅魔科技挂载成功');
+    if (techState.enabled) {
+        hackAppState();
+        setInterval(hackAppState, 2000);
+        addLog('SYSTEM', '魅魔科技挂载成功');
+    } else {
+        addLog('SYSTEM', '当前处于安全模式（未注入）');
+    }
     
-    // 劫持 Fetch 内部记录
+    // 劫持 Fetch（注入启用标记并添加header）
     const originalFetch = window.fetch;
     window.fetch = function() {
-        const url = arguments[0];
+        const input = arguments[0];
+        const init = arguments[1] || {};
+        const url = typeof input === 'string' ? input : input.url;
+        if (!techState.enabled) return originalFetch.apply(this, arguments);
+        
+        // 添加启用标记头
+        let headers = new Headers(init.headers || {});
+        headers.set('x-tech-enabled', '1');
+        
+        // 确保即使传入Request也能正常包装
+        if (input instanceof Request) {
+            const modified = new Request(input, { headers });
+            return originalFetch.call(this, modified);
+        }
+        
+        const newInit = { ...init, headers };
         if (typeof url === 'string' && (url.includes('/api/') || url.includes('/trpc/'))) {
             addLog('INTERCEPT', '正在拦截: ' + url.split('?')[0].split('/').pop());
         }
-        return originalFetch.apply(this, arguments);
+        return originalFetch.call(this, url, newInit);
     };
 })();
 `;
@@ -197,20 +294,10 @@ export default {
         newHeaders.set("Origin", TARGET_URL);
         newHeaders.set("Referer", TARGET_URL + "/");
 
-        // 1. 处理请求 (拦截签到/任务/积分)
-        let newBody = request.body;
-        if (request.method === "POST") {
-            const path = url.pathname;
-            // 劫持签到请求或积分增加请求
-            if (path.includes("checkin") || path.includes("signin") || path.includes("task")) {
-                // 模拟一个极其成功的响应 (见下文 JSON 处理)
-            }
-        }
-
         const newRequest = new Request(targetUrl.toString(), {
             method: request.method,
             headers: newHeaders,
-            body: newBody,
+            body: request.body,
             redirect: "manual"
         });
 
@@ -220,35 +307,39 @@ export default {
 
         const contentType = respHeaders.get("content-type") || "";
 
-        // 2. HTML 注入
+        // 1. HTML 注入 (始终注入 UI 控制面板)
         if (contentType.includes("text/html")) {
             let text = await response.text();
             text = text.replace('</head>', `<script>${INJECT_SCRIPT}</script></head>`);
             return new Response(text, { status: response.status, headers: respHeaders });
         }
 
-        // 3. SSE 流式处理 (核心：拦截积分不足消息并改写为“修改成功”)
+        // 2. SSE 流式处理
         if (contentType.includes("text/event-stream")) {
-            const { readable, writable } = new TransformStream();
-            modifyStream(response.body, writable);
-            return new Response(readable, { status: 200, headers: respHeaders });
+            return new Response(response.body, { status: 200, headers: respHeaders });
         }
 
-        // 4. JSON 深度篡改 (同步 HAR 中的结构)
-        if (contentType.includes("application/json") || url.pathname.includes("/api/")) {
+        // 3. JSON 深度篡改 (仅在客户端明确启用且非auth路径时执行)
+        if (contentType.includes("application/json")) {
+            const techEnabled = request.headers.get('x-tech-enabled') === '1';
+            const path = url.pathname.toLowerCase();
+            // 排除登录/注册/验证等关键auth路径
+            const isAuthPath = path.startsWith('/api/auth/') || path.includes('auth.sign') || path.includes('auth.verify');
+            
             try {
                 let text = await response.text();
-                let data = JSON.parse(text);
-                
-                // 针对签到接口伪造响应
-                if (url.pathname.includes("checkin") || url.pathname.includes("sign")) {
-                    data = { success: true, message: "签到成功，已刷入 999 积分", credits: 999999 };
+                if (techEnabled && !isAuthPath) {
+                    let data = JSON.parse(text);
+                    
+                    // 移除错误的 sign 匹配，仅保留明确的签到接口（可按需添加）
+                    data = deepHackJSON(data);
+                    const modified = JSON.stringify(data);
+                    respHeaders.set("content-length", new Blob([modified]).size.toString());
+                    return new Response(modified, { status: 200, headers: respHeaders });
+                } else {
+                    // 未启用或auth路径，原样返回
+                    return new Response(text, { status: response.status, headers: respHeaders });
                 }
-
-                data = deepHackJSON(data);
-                const modified = JSON.stringify(data);
-                respHeaders.set("content-length", new Blob([modified]).size.toString());
-                return new Response(modified, { status: 200, headers: respHeaders });
             } catch (e) {
                 return new Response(response.body, { status: response.status, headers: respHeaders });
             }
@@ -258,36 +349,10 @@ export default {
     }
 };
 
-async function modifyStream(readable, writable) {
-    const reader = readable.getReader();
-    const writer = writable.getWriter();
-    const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
-    
-    try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            let chunk = decoder.decode(value, { stream: true });
-            
-            // 关键：将所有“余额不足”或“需升级”的错误直接在流里替换成“核心处理中...”
-            if (chunk.includes("积分") || chunk.includes("balance") || chunk.includes("upgrade")) {
-                chunk = chunk.replace(/"type":"error"/g, '"type":"token"')
-                             .replace(/"message":".*?"/g, '"data":"\\n[魅魔科技]：正在绕过服务端校验...修改成功！\\n"')
-                             .replace(/"classification":".*?"/g, '"classification":"none"');
-            }
-            await writer.write(encoder.encode(chunk));
-        }
-    } catch (e) {} finally {
-        await writer.close();
-    }
-}
-
 function deepHackJSON(obj) {
     if (!obj || typeof obj !== 'object') return obj;
     for (let key in obj) {
         let lowKey = key.toLowerCase();
-        // 覆盖 VIP/等级/配额 (适配 HAR 中的 user 结构) [cite: 1]
         if (lowKey.includes('vip') || lowKey.includes('level') || lowKey.includes('plan')) {
             if (typeof obj[key] === 'number') obj[key] = 3;
             if (typeof obj[key] === 'string') obj[key] = "VIP 3";
@@ -298,10 +363,7 @@ function deepHackJSON(obj) {
         if (lowKey === 'isvip' || lowKey === 'is_vip' || lowKey === 'premium') {
             obj[key] = true;
         }
-        // 覆盖个人资料 [cite: 2]
         if (lowKey === 'nickname') obj[key] = "电子魅魔首席用户";
-        if (lowKey === 'gender') obj[key] = "男性";
-
         if (typeof obj[key] === 'object') deepHackJSON(obj[key]);
     }
     return obj;
